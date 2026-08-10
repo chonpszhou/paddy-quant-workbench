@@ -8,6 +8,10 @@ on:
 jobs:
   import-check:
     runs-on: ubuntu-latest
+    # 显式将仓库根加入 PYTHONPATH, 确保 'python -c' 与 verify.py 都能以常规包方式
+    # 解析 src 命名空间 (CI 环境下 -c 的 cwd 语义偶发不稳定, 此处消除歧义)。
+    env:
+      PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
 
