@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  import-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile + import smoke test
+        # dashboard.py 是 Streamlit 入口, 普通 python 上下文 import 会触发运行时错误,
+        # 故用 py_compile 校验语法, 并对 src 全部模块做真实导入 (验证导入完整性)。
+        run: |
+          python -m py_compile dashboard.py
+          python -c "import src.data.unified, src.data.realtime, src.engine.signals, src.engine.backtest, src.engine.gex, src.research.report, src.research.backtest_report, src.monitor.watchlist, src.monitor.alert, src.utils.common; print('imports OK')"
+
+      - name: Run verify.py (live data, best-effort)
+        # verify.py 含实时网络拉取 (Binance/yfinance), 偶发限流可能导致失败,
+        # 设为 best-effort 不阻断构建, 仅作额外信号。
+        continue-on-error: true
+        run: python verify.py

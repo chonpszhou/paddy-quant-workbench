@@ -47,6 +47,20 @@ d, extra = SignalEngine().analyze(df, "1d")
 print(extra)   # {'signal': 'BUY', ...}
 ```
 
+## 部署 (Streamlit Community Cloud)
+
+代码已发布到公开仓库 https://github.com/chonpszhou/paddy-quant-workbench，可一键部署：
+
+1. 打开 https://streamlit.io/cloud，用 GitHub（仓库所属账号）登录。
+2. 点击 **New app**。
+3. Repository 选 `chonpszhou/paddy-quant-workbench`，Branch 选 `main`，Main file path 填 `dashboard.py`。
+4. 点击 **Deploy**（根目录的 requirements.txt 会自动安装依赖）。
+
+部署后得到 `*.streamlit.app` 公网地址；改代码后 `git push` 会自动重新部署。
+
+> 免费版闲置会休眠，首次访问冷启动约 1–2 分钟；行情源（yfinance / Binance）在云端可正常访问。
+> 本项目无密钥，公开仓库安全；若以后接入券商 API，请使用 Streamlit Cloud 的 **Secrets** 功能，切勿写入代码。
+
 ## 目录结构
 
 ```
