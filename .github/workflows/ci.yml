@@ -13,10 +13,10 @@ jobs:
     env:
       PYTHONPATH: .
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -37,3 +37,8 @@ jobs:
         # 设为 best-effort 不阻断构建, 仅作额外信号。
         continue-on-error: true
         run: python verify.py
+
+      - name: Build Docker image (防止 Dockerfile 退化)
+        # ubuntu-latest runner 自带 docker; 仅本地构建、不推送,
+        # 作为硬检查确保 Dockerfile 与依赖始终可构建, 不会悄悄坏掉。
+        run: docker build -t paddy-quant-workbench:ci .
