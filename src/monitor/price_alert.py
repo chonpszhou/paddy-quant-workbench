@@ -10,16 +10,17 @@ from __future__ import annotations
 import json
 import time
 import uuid
+import warnings
 from pathlib import Path
 
-from ..utils.common import load_settings, PROJECT_ROOT
+from ..utils.common import load_settings, PROJECT_ROOT, resolve_data_path
 
 
 class PriceAlert:
     def __init__(self, path: str | None = None):
         self.settings = load_settings()
-        self.path = Path(path) if path else PROJECT_ROOT / self.settings.get(
-            "price_alert_path", "data/price_alerts.json"
+        self.path = Path(path) if path else resolve_data_path(
+            self.settings.get("price_alert_path", "data/price_alerts.json")
         )
         self.rules = self._load()
 
@@ -32,10 +33,14 @@ class PriceAlert:
         return []
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(self.rules, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        # 云端应用目录可能只读; 保存失败仅降级为内存, 不崩溃 App
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(
+                json.dumps(self.rules, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except OSError as e:
+            warnings.warn(f"价格预警保存失败(只读环境?), 本次改动仅内存生效: {e}")
 
     @staticmethod
     def _norm(sym: str) -> str:

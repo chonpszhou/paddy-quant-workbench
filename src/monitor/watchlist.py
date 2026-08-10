@@ -6,9 +6,10 @@ group 缺省为 "默认"; 旧版无 group 字段的条目在加载时自动补�
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
-from ..utils.common import load_settings, PROJECT_ROOT
+from ..utils.common import load_settings, PROJECT_ROOT, resolve_data_path
 
 DEFAULT_GROUP = "默认"
 
@@ -16,7 +17,9 @@ DEFAULT_GROUP = "默认"
 class Watchlist:
     def __init__(self, path: str | None = None):
         self.settings = load_settings()
-        self.path = Path(path) if path else PROJECT_ROOT / self.settings["watchlist_path"]
+        self.path = Path(path) if path else resolve_data_path(
+            self.settings["watchlist_path"]
+        )
         self.items = self._load()
 
     def _load(self) -> list:
@@ -32,10 +35,14 @@ class Watchlist:
         return []
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(self.items, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        # 云端应用目录可能只读; 保存失败仅降级为内存, 不崩溃 App
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(
+                json.dumps(self.items, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except OSError as e:
+            warnings.warn(f"关注列表保存失败(只读环境?), 本次改动仅内存生效: {e}")
 
     def groups(self) -> list:
         """返回去重且有序的分组名列表 (至少含 "默认")。"""

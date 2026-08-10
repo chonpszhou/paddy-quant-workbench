@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -26,6 +27,38 @@ def ensure_dir(path: str | os.PathLike) -> Path:
     p = Path(path)
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def resolve_data_path(configured: str) -> Path:
+    """将数据路径解析为可写位置, 兼容本地 / Docker / Streamlit Cloud 等环境。
+
+    - 展开 `~`; 相对路径基于 PROJECT_ROOT。
+    - 若所在目录可写则优先使用 (本地开发 / Docker volume 映射的 /app/data)。
+    - 否则回退到 `~/.paddy-quant/<文件名>`; 若 home 也不可写再回退系统临时目录
+      (Streamlit Cloud 等云端应用目录只读时, 避免保存失败导致 App 崩溃)。
+    """
+    import warnings
+
+    raw = os.path.expanduser(configured)
+    p = Path(raw) if os.path.isabs(raw) else (PROJECT_ROOT / raw)
+    d = p.parent
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        probe = d / ".write_test"
+        probe.write_text("1", encoding="utf-8")
+        probe.unlink()
+        return p
+    except OSError:
+        fallback_dir = Path(os.path.expanduser("~")) / ".paddy-quant"
+        try:
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            fallback_dir = Path(tempfile.gettempdir()) / "paddy-quant"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+        warnings.warn(
+            f"数据目录不可写, 已回退到 {fallback_dir} (原配置: {configured})"
+        )
+        return fallback_dir / p.name
 
 
 def tf_to_yf_interval(timeframe: str) -> str:
