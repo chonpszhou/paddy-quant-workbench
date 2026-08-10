@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行时数据 (缓存 + 关注列表, 运行时由 ensure_dir 生成)
+data/
+
+# 生成样例报告
+sample_backtest_report.html
+
+# OS
+.DS_Store

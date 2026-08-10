@@ -1,0 +1,36 @@
+# Paddy 量化工作台配置
+
+markets:
+  us:
+    provider: yfinance
+    symbol_suffix: ""        # 美股无后缀, 如 AAPL
+  hk:
+    provider: yfinance
+    symbol_suffix: ".HK"     # 港股后缀, 如 0700.HK
+  crypto:
+    provider: binance
+    quote_asset: "USDT"      # 加密计价币, 如 BTCUSDT
+
+data:
+  cache_dir: "data/cache"
+  use_cache: true
+  cache_days: 1              # 缓存有效期(天)
+
+signal:
+  timeframes: ["1d", "4h", "1h", "15m"]
+  default_lookback: 93
+  fast_ma: 5
+  slow_ma: 20
+  rsi_period: 14
+  volume_zscore_window: 20
+  anomaly_volume_z: 2.5      # 异常换手阈值
+
+backtest:
+  initial_capital: 100000
+  commission: 0.001          # 单边佣金 0.1%
+
+watchlist_path: "data/watchlist.json"
+
+realtime:
+  default_interval: 5          # 自动刷新间隔(秒)
+  ws_base: "wss://stream.binance.com:9443/stream"

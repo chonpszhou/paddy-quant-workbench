@@ -1,0 +1,16 @@
+# Paddy 量化工作台依赖
+# 数据 / 回测 / 信号核心
+yfinance>=0.2.40
+pandas>=2.0.0
+numpy>=1.24.0
+# Web 面板
+streamlit>=1.30.0
+plotly>=5.0.0
+# 网络请求 (加密行情)
+requests>=2.31.0
+# 加密实时行情 WebSocket
+websocket-client>=1.7.0
+# 面板自动刷新 (实时模式 / 实时行情)
+streamlit-autorefresh>=0.0.3
+# 配置
+pyyaml>=6.0.1
