@@ -30,6 +30,7 @@ backtest:
   commission: 0.001          # 单边佣金 0.1%
 
 watchlist_path: "data/watchlist.json"
+price_alert_path: "data/price_alerts.json"
 
 realtime:
   default_interval: 5          # 自动刷新间隔(秒)

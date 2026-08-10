@@ -31,6 +31,7 @@ try:
     import src.research.backtest_report  # noqa: F401
     import src.monitor.watchlist  # noqa: F401
     import src.monitor.alert  # noqa: F401
+    import src.monitor.price_alert  # noqa: F401
     import src.utils.common  # noqa: F401
     print("imports OK")
 except Exception as e:  # noqa: BLE001

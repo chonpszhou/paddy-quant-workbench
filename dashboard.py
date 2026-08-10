@@ -30,6 +30,7 @@ from src.research.report import generate_report
 from src.research.backtest_report import build_backtest_report_md, build_backtest_report_html
 from src.monitor.watchlist import Watchlist
 from src.monitor.alert import AlertEngine
+from src.monitor.price_alert import PriceAlert
 from src.utils.common import COLOR_UP, COLOR_DOWN, load_settings
 
 st.set_page_config(page_title="Paddy 量化工作台", layout="wide")
@@ -42,6 +43,7 @@ hub = DataHub()
 sig = SignalEngine()
 wl = Watchlist()
 alerter = AlertEngine()
+pa = PriceAlert()
 ticker = get_live_ticker()
 
 st.sidebar.title("Paddy 量化工作台")
@@ -117,46 +119,80 @@ if page == "行情看板":
                 st.error(f"异常换手提醒 (E): 量能 z = {extra['vol_z']:.1f}")
 
 elif page == "实时行情":
-    st.header("实时行情 · 加密货币 WebSocket 推送")
-    st.caption("通过 Binance @ticker 实时流推送, 涨绿跌红; 美股/港股为延迟数据请用行情看板轮询")
-    syms = st.text_input("标的(逗号分隔, 如 BTC,ETH,SOL)", "BTC,ETH,SOL", key="rt_syms")
-    col_a, col_b = st.columns([1, 3])
-    with col_a:
-        start = st.button("启动 / 更新订阅", key="rt_start")
-    with col_b:
-        interval = st.slider("刷新间隔(秒)", 1, 15, RT_INTERVAL, key="rt_int")
+    st.header("实时行情 · 自选监控")
+    st.caption("加密货币经 Binance @ticker 实时推送(涨绿跌红); 美股/港股为延迟数据, 用行情看板轮询")
 
-    sym_list = [s.strip().upper() for s in syms.split(",") if s.strip()]
+    # 手动订阅 + 自选分组中的加密标的自动订阅
+    syms = st.text_input("手动订阅(逗号分隔, 如 BTC,ETH,SOL)", "", key="rt_syms")
+    manual = [s.strip().upper() for s in syms.split(",") if s.strip()]
+    wl_crypto = [i["symbol"] for i in wl.list() if i["market"] == "crypto"]
+    sym_list = list(dict.fromkeys(manual + wl_crypto))  # 去重保序
     if sym_list:
         ticker.ensure_running(sym_list)
 
+    col_a, col_b = st.columns([1, 3])
+    with col_a:
+        st.caption("自动订阅" if wl_crypto else "未订阅")
+    with col_b:
+        interval = st.slider("刷新间隔(秒)", 1, 15, RT_INTERVAL, key="rt_int")
     st_autorefresh(interval=interval * 1000, key="rt_autorefresh")
+
     status = ticker.status()
     if not status["has_ws"]:
         st.warning("未安装 websocket-client, 实时推送不可用 (pip install websocket-client)")
     elif not status["running"]:
-        st.info("点击「启动 / 更新订阅」开始接收实时行情")
+        st.info("无加密订阅; 把 crypto 标的加入关注列表后此处自动订阅实时流")
     else:
         st.success(f"实时流已连接, 订阅: {', '.join(status['symbols'])}")
-        snap = ticker.snapshot()
-        if not snap:
-            st.info("正在等待首条推送...")
-        else:
-            rows = []
-            for s in sym_list:
-                r = snap.get(s)
-                if r:
-                    color = COLOR_UP if r["change_pct"] >= 0 else COLOR_DOWN
-                    arrow = "▲" if r["change_pct"] >= 0 else "▼"
-                    rows.append({
-                        "标的": s,
-                        "最新价": f"{r['price']:,.2f}",
-                        "24h涨跌": f"<span style='color:{color}'>{arrow} {abs(r['change_pct']):.2f}%</span>",
-                        "最高": f"{r['high']:,.2f}",
-                        "最低": f"{r['low']:,.2f}",
-                    })
-            if rows:
-                st.write(pd.DataFrame(rows).to_html(escape=False, index=False), unsafe_allow_html=True)
+
+    snap = ticker.snapshot()
+
+    # ---- 价格预警触发 ----
+    triggered = pa.evaluate(snap)
+    if triggered:
+        st.subheader("🔔 价格预警触发")
+        for t in triggered:
+            direction = "上破 ≥" if t["direction"] == "above" else "下破 ≤"
+            field = "价格" if t["field"] == "price" else "24h涨跌%"
+            st.error(f"{t['symbol']} {field} {direction} {t['threshold']} → 当前 {t['cur']}"
+                     + (f" ({t['note']})" if t.get("note") else ""))
+    else:
+        st.caption("当前无触发的价格预警")
+
+    # ---- 分组自选实时表 ----
+    st.subheader("分组自选 · 实时")
+    any_group = False
+    for g in wl.groups():
+        items = wl.list(g)
+        if not items:
+            continue
+        any_group = True
+        st.markdown(f"**{g}**")
+        rows = []
+        for it in items:
+            s = it["symbol"]
+            r = snap.get(s)
+            if r:
+                color = COLOR_UP if r["change_pct"] >= 0 else COLOR_DOWN
+                arrow = "▲" if r["change_pct"] >= 0 else "▼"
+                price = f"{r['price']:,.2f}"
+                chg = f"<span style='color:{color}'>{arrow} {abs(r['change_pct']):.2f}%</span>"
+                live = "实时"
+            else:
+                price = "—"
+                chg = "—"
+                live = "延迟/未订阅" if it["market"] == "crypto" else "延迟"
+            rows.append({
+                "标的": s,
+                "市场": it["market"],
+                "最新价": price,
+                "24h涨跌": chg,
+                "备注": it.get("note", ""),
+                "数据": live,
+            })
+        st.write(pd.DataFrame(rows).to_html(escape=False, index=False), unsafe_allow_html=True)
+    if not any_group:
+        st.info("关注列表为空, 先到「关注列表」页添加标的与分组")
 
 elif page == "信号扫描":
     st.header("信号扫描 · 关注列表")
@@ -264,17 +300,85 @@ elif page == "期权 GEX":
             st.plotly_chart(fig, use_container_width=True)
 
 elif page == "关注列表":
-    st.header("关注列表")
-    c1, c2 = st.columns(2)
+    st.header("关注列表 · 自选分组")
+    st.caption("分组管理标的; 价格预警在「实时行情」页结合实时流自动触发")
+
+    # ---- 分组选择 / 删除 ----
+    groups = wl.groups()
+    col_g1, col_g2 = st.columns([3, 1])
+    with col_g1:
+        sel_group = st.selectbox("当前分组", groups, key="wl_group")
+    with col_g2:
+        if sel_group != "默认":
+            if st.button(f"删除分组「{sel_group}」", key="wl_delgroup"):
+                wl.delete_group(sel_group)
+                st.success("已删除该分组及其标的")
+
+    # ---- 添加标的到当前分组 ----
+    c1, c2, c3, c4 = st.columns([2, 1, 2, 1])
     with c1:
         sym = st.text_input("添加标的", key="wl_sym")
     with c2:
         market = st.selectbox("市场", ["us", "hk", "crypto"], key="wl_mkt")
-    if st.button("添加", key="wl_add"):
-        ok = wl.add(sym, market)
-        st.success("已添加" if ok else "已存在")
-    st.dataframe(pd.DataFrame(wl.list()), use_container_width=True)
-    rm_sym = st.text_input("删除标的", key="wl_rm")
-    if st.button("删除", key="wl_del"):
-        ok = wl.remove(rm_sym, market)
-        st.success("已删除" if ok else "未找到")
+    with c3:
+        note = st.text_input("备注(可选)", key="wl_note")
+    with c4:
+        new_group = st.text_input("归入新分组(可选)", key="wl_newgroup")
+    target_group = new_group.strip() or sel_group
+    if st.button("添加到分组", key="wl_add"):
+        if sym.strip():
+            ok = wl.add(sym, market, note, target_group)
+            st.success(f"已添加至「{target_group}」" if ok else "该分组已存在此标的")
+        else:
+            st.warning("请输入标的")
+
+    # ---- 当前分组标的 ----
+    items = wl.list(sel_group)
+    if items:
+        st.dataframe(pd.DataFrame(items)[["symbol", "market", "note", "group"]],
+                     use_container_width=True)
+        rm_sym = st.text_input("删除标的(当前分组)", key="wl_rm")
+        rm_mkt = st.selectbox("删除标的市场", ["us", "hk", "crypto"], key="wl_rm_mkt")
+        if st.button("删除", key="wl_del"):
+            ok = wl.remove(rm_sym, rm_mkt, sel_group)
+            st.success("已删除" if ok else "未找到")
+    else:
+        st.info("当前分组暂无标的")
+
+    # ---- 价格预警规则管理 ----
+    st.subheader("价格预警规则")
+    st.caption("对标的设置 价格/涨跌幅 的 上破/下破 阈值; 实时行情页自动评估触发")
+    a1, a2, a3 = st.columns([2, 1, 1])
+    with a1:
+        a_sym = st.text_input("预警标的", "BTC", key="pa_sym")
+    with a2:
+        a_mkt = st.selectbox("市场", ["crypto", "us", "hk"], index=0, key="pa_mkt")
+    with a3:
+        a_field = st.selectbox("指标", ["price", "change_pct"], key="pa_field")
+    b1, b2, b3 = st.columns([2, 2, 2])
+    with b1:
+        a_dir = st.selectbox("方向", ["above", "below"],
+                             format_func=lambda x: "上破 ≥" if x == "above" else "下破 ≤",
+                             key="pa_dir")
+    with b2:
+        a_thr = st.number_input("阈值", value=0.0, key="pa_thr")
+    with b3:
+        a_note = st.text_input("备注", key="pa_note")
+    if st.button("添加预警", key="pa_add"):
+        if a_sym.strip():
+            pa.add(a_sym, a_mkt, a_field, a_dir, a_thr, a_note)
+            st.success("预警已添加")
+        else:
+            st.warning("请输入标的")
+    rules = pa.list()
+    if rules:
+        st.dataframe(
+            pd.DataFrame(rules)[["symbol", "market", "field", "direction", "threshold", "note", "id"]],
+            use_container_width=True,
+        )
+        del_id = st.text_input("删除规则ID", key="pa_delid")
+        if st.button("删除规则", key="pa_del"):
+            ok = pa.remove(del_id)
+            st.success("已删除" if ok else "未找到该ID")
+    else:
+        st.info("暂无预警规则")
