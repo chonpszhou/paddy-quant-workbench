@@ -1,0 +1,14 @@
+services:
+  quant:
+    build: .
+    image: paddy-quant-workbench:latest
+    container_name: paddy-quant
+    ports:
+      - "8501:8501"
+    volumes:
+      # 持久化关注列表 / 价格预警, 容器重建不丢数据
+      - quant-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  quant-data:

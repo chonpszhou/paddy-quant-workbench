@@ -61,6 +61,36 @@ print(extra)   # {'signal': 'BUY', ...}
 > 免费版闲置会休眠，首次访问冷启动约 1–2 分钟；行情源（yfinance / Binance）在云端可正常访问。
 > 本项目无密钥，公开仓库安全；若以后接入券商 API，请使用 Streamlit Cloud 的 **Secrets** 功能，切勿写入代码。
 
+## 部署 (Docker)
+
+适合本地常驻、内网共享或丢到任意 Linux 服务器。镜像基于 `python:3.11-slim`，非 root 用户运行，内置健康检查。
+
+### 方式一：docker compose（推荐）
+
+```bash
+# 构建并后台启动
+docker compose up -d --build
+# 浏览器打开 http://localhost:8501
+```
+
+关注列表与价格预警数据通过 named volume `quant-data` 持久化，重建容器不丢。停止：`docker compose down`。
+
+### 方式二：原生 docker
+
+```bash
+docker build -t paddy-quant-workbench .
+docker run -d --name paddy-quant -p 8501:8501 \
+  -v paddy-quant-data:/app/data \
+  --restart unless-stopped \
+  paddy-quant-workbench
+```
+
+### 说明
+
+- 容器内 Streamlit 监听 `0.0.0.0:8501`，映射到宿主机 `8501`。
+- 实时加密行情依赖出网到 `stream.binance.com`（WebSocket），部署机需放行该域名；无外网时实时流会显示「正在等待首条推送」。
+- 如需改端口，在 `docker run` 时把左边 `-p 9090:8501` 改成你的端口即可（`8501` 是容器内端口，勿改）。
+
 ## 目录结构
 
 ```

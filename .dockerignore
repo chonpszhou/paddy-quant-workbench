@@ -1,0 +1,15 @@
+# 版本控制 / 缓存
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 运行时生成的数据与本地产物 (容器内会重新生成)
+data/
+sample_backtest_report.html
+
+# CI / 本地环境
+.github/
+.venv/
+*.md
