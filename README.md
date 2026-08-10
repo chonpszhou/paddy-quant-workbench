@@ -51,13 +51,16 @@ print(extra)   # {'signal': 'BUY', ...}
 
 代码已发布到公开仓库 https://github.com/chonpszhou/paddy-quant-workbench，可一键部署：
 
-1. 打开 https://streamlit.io/cloud，用 GitHub（仓库所属账号）登录。
-2. 点击 **New app**。
-3. Repository 选 `chonpszhou/paddy-quant-workbench`，Branch 选 `main`，Main file path 填 `dashboard.py`。
+1. 打开 https://streamlit.io/cloud，**务必用拥有该仓库的 GitHub 账号登录**（换错账号则下拉框看不到仓库）。
+2. 点击 **New app**，Repository 下拉里选 `chonpszhou/paddy-quant-workbench`。
+   - 若下拉列表里**看不到此仓库**：说明 GitHub 的 OAuth 授权范围未包含它。去 GitHub → Settings → Developer settings → OAuth Apps（或 Settings → Integrations → Applications）→ 找到 Streamlit 授权 → Repository access 改为 **All repositories** 或显式勾选 `paddy-quant-workbench` → 保存 → 回 Streamlit Cloud 刷新重选。
+   - **不要用本地 `streamlit` 的 “Deploy” 按钮**，那条老路径常报 “code is not connected to a remote GitHub repository”，直接走官网网页最稳。
+3. Branch 选 `main`，**Main file path 必须填 `dashboard.py`**（默认是 `app.py`，不填会部署后找不到入口）。
 4. 点击 **Deploy**（根目录的 requirements.txt 会自动安装依赖）。
 
 部署后得到 `*.streamlit.app` 公网地址；改代码后 `git push` 会自动重新部署。
 
+> ⚠️ 部署报错 “The app’s code is not connected to a remote GitHub repository” 不是代码问题，是 Streamlit Cloud ↔ GitHub 的授权连接没建立，按上面第 2 步排查 OAuth 范围即可。
 > 免费版闲置会休眠，首次访问冷启动约 1–2 分钟；行情源（yfinance / Binance）在云端可正常访问。
 > 本项目无密钥，公开仓库安全；若以后接入券商 API，请使用 Streamlit Cloud 的 **Secrets** 功能，切勿写入代码。
 
