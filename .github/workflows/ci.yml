@@ -25,10 +25,12 @@ jobs:
 
       - name: Compile + import smoke test
         # dashboard.py 是 Streamlit 入口, 普通 python 上下文 import 会触发运行时错误,
-        # 故用 py_compile 校验语法, 并对 src 全部模块做真实导入 (验证导入完整性)。
+        # 故用 py_compile 校验语法, 并用仓库根脚本 import_check.py 做真实导入
+        # (脚本自身目录即仓库根, 显式插入 sys.path[0], 避免 -c 的 cwd 歧义;
+        # 失败时附带 sys.path 与冲突 src 诊断)。
         run: |
           python -m py_compile dashboard.py
-          python -c "import src.data.unified, src.data.realtime, src.engine.signals, src.engine.backtest, src.engine.gex, src.research.report, src.research.backtest_report, src.monitor.watchlist, src.monitor.alert, src.utils.common; print('imports OK')"
+          python import_check.py
 
       - name: Run verify.py (live data, best-effort)
         # verify.py 含实时网络拉取 (Binance/yfinance), 偶发限流可能导致失败,
