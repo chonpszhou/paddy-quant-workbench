@@ -1,0 +1,10 @@
+[theme]
+# 对齐 MotionSites "Synapse Dark Hero" 设计语言 (skins-mcp)
+primaryColor = "#6366f1"          # indigo-500 主色/强调
+backgroundColor = "#09090b"       # zinc-950 背景
+secondaryBackgroundColor = "#0f172a"  # slate-900 卡片表面
+textColor = "#f8fafc"             # slate-50 前景
+font = "sans serif"
+
+[server]
+headless = true
