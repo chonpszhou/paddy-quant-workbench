@@ -6,7 +6,8 @@ __pycache__/
 venv/
 
 # 运行时数据 (缓存 + 关注列表, 运行时由 ensure_dir 生成)
-data/
+# 注意: 仅忽略仓库根目录下的 data/, 切勿写成裸 "data/" —— 否则会误伤 src/data/ 源码目录
+/data/
 
 # 生成样例报告
 sample_backtest_report.html
