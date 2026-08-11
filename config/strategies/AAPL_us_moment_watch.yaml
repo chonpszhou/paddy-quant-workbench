@@ -1,0 +1,15 @@
+name: 寻优观察·AAPL(美股)
+profile: optimized_watch
+strategy: momentum
+params:
+  window: 40
+markets: [us]
+instruments: [spot, etf]
+risk_override:
+  max_single_position_pct: 0.02
+  max_strategy_position_pct: 0.30
+  max_total_position_pct: 0.50
+  stop_loss_pct: 0.03
+  daily_loss_circuit_pct: 0.05
+  max_drawdown_circuit_pct: 0.20
+note: "参数寻优 Top-1（评分62.7，样本外夏普1.66），属模拟盘观察，未过≥70可部署门槛，仅供模拟盘灰度验证。"
