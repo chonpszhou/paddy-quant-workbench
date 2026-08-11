@@ -1,0 +1,25 @@
+# 多标的规格覆盖（可选）
+# 缺省用代码内置默认值（见 src/engine/instruments.py 的 _DEFAULTS）。
+# 格式: 市场 -> 标的类型(spot/future/etf) -> 字段覆盖。
+# 支持的字段: multiplier(合约乘数) / margin_rate(保证金比例,1.0=全额,<1=带杠杆)
+#            / shortable(能否做空) / fee_rate / slippage / tick_size / contract_unit / notes
+
+a:
+  future:
+    multiplier: 200.0          # 如沪深300股指 IF，每点 200 元
+    margin_rate: 0.12          # 保证金约 12%
+    tick_size: 0.2
+    notes: "A股股指期货（IF/IC/IH），保证金约12%，可多空"
+hk:
+  future:
+    multiplier: 50.0           # 恒指期货每点 50 港元
+    margin_rate: 0.10
+    tick_size: 1.0
+us:
+  future:
+    multiplier: 20.0           # 迷你标普 ES 每点 20 美元
+    margin_rate: 0.10
+crypto:
+  future:
+    margin_rate: 0.05          # U 本位合约默认 5% 维持保证金起
+    tick_size: 0.1

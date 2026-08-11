@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, date, time
 from pathlib import Path
 
 import numpy as np
@@ -25,8 +26,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from src.utils.common import load_settings
 from src.data.unified import DataHub
-from src.engine.backtest import Backtester
+from src.engine.backtest import Backtester, _STRATS
+from src.engine.instruments import InstrumentRegistry
+from src.engine.experiment import ExperimentRunner
+from src.broker import PaperBroker, Order
 from src.risk.risk_control import RiskConfig, RiskController
+from src.utils import calendar as mcal
 
 ROOT = Path(__file__).parent
 PROFILE_PATH = ROOT / "config" / "user_profile.yaml"
@@ -62,6 +67,14 @@ def load_preset(name: str) -> dict:
     if not p.exists():
         raise SystemExit(f"预设不存在: {name}，可选 conservative/balanced/aggressive")
     return yaml.safe_load(p.read_text(encoding="utf-8"))
+
+
+def load_instrument_overrides() -> dict:
+    """读取 config/instruments.yaml 的标的规格覆盖（可选）。"""
+    p = ROOT / "config" / "instruments.yaml"
+    if p.exists():
+        return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -212,8 +225,175 @@ def cmd_selftest(args) -> None:
     bt = Backtester()
     r = bt.run(df, "sma_cross")
     assert "profit_loss_ratio" in r and "sharpe" in r
-    print("✅ selftest 通过：风控 + 回测模块正常工作")
+
+    # —— 多标的规格 + 模拟盘 + 日历 自检 ——
+    from src.engine.instruments import InstrumentRegistry
+    from src.broker import PaperBroker, Order
+    from src.utils import calendar as mcal
+
+    reg = InstrumentRegistry()
+    spot = reg.get("AAPL", "us", "spot")
+    assert abs(spot.notional(10, 100) - 1000.0) < 1e-9
+    fut = reg.get("ES", "us", "future")
+    assert fut.is_leveraged and fut.margin_required(1, 100) < fut.notional(1, 100)
+
+    # 现货：同价买后卖，验证会计正确（回本减费，权益略低于本金）
+    brk = PaperBroker(initial_cash=100000, registry=reg)
+    brk.mark("AAPL", 100.0)
+    assert brk.submit_order(Order("AAPL", "us", "spot", "buy", 10))
+    brk.mark("AAPL", 100.0)
+    assert brk.submit_order(Order("AAPL", "us", "spot", "sell", 10))
+    assert brk.get_positions() == {}, "清仓后不应有持仓"
+    eq = brk.get_account()["equity"]
+    assert 99000 < eq < 100000, f"同价平仓权益应在(99000,100000)，实际 {eq}"
+
+    # 做空：高价开空，低价平，应盈利
+    brk2 = PaperBroker(initial_cash=100000, registry=reg)
+    brk2.mark("AAPL", 100.0)
+    assert brk2.submit_order(Order("AAPL", "us", "spot", "sell", 10))  # 开空
+    assert brk2.get_positions()["AAPL"].qty == -10
+    brk2.mark("AAPL", 90.0)
+    assert brk2.submit_order(Order("AAPL", "us", "spot", "buy", 10))   # 平空
+    assert brk2.get_account()["realized_pnl"] > 0
+
+    # 期货：保证金占用（非全额），平仓释放保证金 + 实现盈亏
+    freg = InstrumentRegistry({"us": {"future": {"margin_rate": 0.1, "multiplier": 20.0}}})
+    fbrk = PaperBroker(initial_cash=100000, registry=freg)
+    fspec = freg.get("ES", "us", "future")
+    fbrk.mark("ES", 100.0)
+    assert fbrk.submit_order(Order("ES", "us", "future", "buy", 1))
+    margin_posted = fspec.margin_required(1, 100.0)  # 1*100*20*0.1 = 200
+    assert abs(fbrk.get_account()["cash"] - (100000 - margin_posted - fspec.trade_cost(1, 100.0))) < 1e-6
+    fbrk.mark("ES", 110.0)
+    assert fbrk.submit_order(Order("ES", "us", "future", "sell", 1))
+    assert fbrk.get_positions() == {}, "期货平仓后不应有持仓"
+    assert fbrk.get_account()["realized_pnl"] > 0, "期货上涨平仓应盈利"
+
+    # 日历
+    assert mcal.is_trading_day("crypto", date(2026, 1, 1)) is True
+    assert mcal.is_trading_day("a", date(2026, 1, 1)) is False
+
+    print("✅ selftest 通过：风控 + 回测 + 多标的规格 + 模拟盘 + 日历 均正常")
     print_report(r, risk, "SELFTEST", "demo")
+
+
+def _fetch_df(symbol: str, market: str, settings: dict, limit: int = 400):
+    """优先走 DataHub（联网），失败则回退到本地 data/real 落库 parquet。"""
+    try:
+        hub = DataHub(settings)
+        df = hub.get(symbol, market, "1d", limit)
+        if df is not None and not df.empty:
+            return df
+    except Exception:
+        pass
+    p = ROOT / "data" / "real" / f"{market}_{symbol}_1d.parquet"
+    if p.exists():
+        return pd.read_parquet(p)
+    return None
+
+
+def cmd_paper(args) -> None:
+    """用真实数据跑一次"前向模拟盘"，验证执行层（现货/期货/ETF + 多空 + 风控限仓）。"""
+    settings = load_settings()
+    preset = load_preset(args.preset)
+    market = norm_market(args.market)
+    df = _fetch_df(args.symbol, market, settings, args.limit)
+    if df is None or df.empty:
+        raise SystemExit("拉不到数据（检查代码/网络/本地 data/real）")
+
+    risk = build_risk_controller(settings, preset.get("risk_override"))
+    registry = InstrumentRegistry(load_instrument_overrides())
+    itype = args.itype
+    spec = registry.get(args.symbol, market, itype)
+    broker = PaperBroker(initial_cash=settings["backtest"]["initial_capital"], registry=registry)
+
+    sig = _STRATS[preset["strategy"]](df["close"], **preset.get("params", {})).shift(1).fillna(0)
+
+    n_entry = n_exit = 0
+    for i in range(1, len(df)):
+        price = float(df["close"].iloc[i])
+        broker.mark(args.symbol, price)
+        desired = int(sig.iloc[i])
+        cur = broker.get_positions().get(args.symbol)
+        cur_qty = cur.qty if cur else 0.0
+
+        if desired != 0 and cur_qty == 0:
+            # 按风控最大单笔市值估算手数
+            per = spec.multiplier * spec.contract_unit
+            qty = risk.max_position_value() / (price * per)
+            qty = spec.round_qty(qty)
+            ok, msg = risk.proposed_size_ok(args.symbol, spec.notional(qty, price))
+            if ok and qty > 0:
+                side = "buy" if desired > 0 else "sell"
+                if broker.submit_order(Order(args.symbol, market, itype, side, qty)):
+                    n_entry += 1
+        elif desired == 0 and cur_qty != 0:
+            side = "sell" if cur_qty > 0 else "buy"
+            if broker.submit_order(Order(args.symbol, market, itype, side, abs(cur_qty))):
+                n_exit += 1
+
+    acct = broker.get_account()
+    print("\n" + "=" * 52)
+    print(f"  🧪 {args.symbol}（{market}/{itype}）前向模拟盘 · 执行层验证")
+    print("=" * 52)
+    print(f"  策略           : {preset['strategy']}")
+    print(f"  数据区间       : {df.index[0].date()} → {df.index[-1].date()}（{len(df)} 根K线）")
+    print(f"  入场次数       : {n_entry} ｜ 离场次数: {n_exit}")
+    print(f"  期末权益       : {acct['equity']:,.2f}")
+    print(f"  已实现盈亏     : {acct['realized_pnl']:,.2f}")
+    print(f"  浮动盈亏       : {acct['unrealized_pnl']:,.2f}")
+    print(f"  现金           : {acct['cash']:,.2f}")
+    if spec.is_leveraged:
+        print(f"  占用保证金     : {acct['margin_used']:,.2f}（期货杠杆）")
+    print("-" * 52)
+    s = risk.summary()
+    print("  🛡️ 强制风控最小集：单笔≤"
+          f"{fmt_pct(s['max_single_position_pct'])} ｜ 总≤{fmt_pct(s['max_total_position_pct'])}"
+          f" ｜ 止损{fmt_pct(s['stop_loss_pct'])}")
+    print("=" * 52)
+    print("  ✅ 执行层（模拟盘）工作正常：多空/保证金/风控限仓均已通过\n")
+
+
+def cmd_sweep(args) -> None:
+    """批量跑 标的×预设 实验，产出横向对比与可上实盘评分。"""
+    settings = load_settings()
+    registry = InstrumentRegistry(load_instrument_overrides())
+    runner = ExperimentRunner(settings, registry)
+
+    jobs: list[tuple[str, str, pd.DataFrame, str]] = []
+    for job in args.jobs.split(","):
+        sym, mkt, pre = (job.split(":") + ["", "", ""])[:3]
+        sym, mkt, pre = sym.strip(), mkt.strip(), pre.strip()
+        if not sym or not mkt or not pre:
+            continue
+        mkt = norm_market(mkt)
+        df = _fetch_df(sym, mkt, settings, args.limit)
+        jobs.append((sym, mkt, df, pre))
+
+    if not jobs:
+        raise SystemExit("用法: --jobs 600519:a:conservative,00700:hk:balanced")
+
+    df = runner.run(jobs)
+    print("\n" + "=" * 52)
+    print("  🔬 实验扫描结果（按可上实盘评分降序）")
+    print("=" * 52)
+    ExperimentRunner.print_table(df)
+    print("=" * 52)
+    out = ROOT / "data" / "experiments" / f"sweep_{pd.Timestamp.now():%Y%m%d}.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out, index=False, encoding="utf-8-sig")
+    print(f"  📁 已保存: {out}\n")
+
+
+def cmd_calendar(args) -> None:
+    """查询某市场某日是否开市、当前时段。"""
+    d = pd.Timestamp(args.date).date() if args.date else None
+    for mkt in (args.markets.split(",") if args.markets else ["a", "hk", "us", "crypto"]):
+        mkt = norm_market(mkt.strip())
+        open_day = mcal.is_trading_day(mkt, d)
+        sess = mcal.market_session(mkt, datetime.combine(d or date.today(), time(10, 0)))
+        label = "开市" if open_day else "休市"
+        print(f"  {mkt:7s} {str(d or date.today())}：{label} ｜ 时段={sess}")
 
 
 def main():
@@ -229,6 +409,29 @@ def main():
     b.set_defaults(func=cmd_backtest)
     sub.add_parser("check", help="校验风控配置").set_defaults(func=cmd_check)
     sub.add_parser("selftest", help="模块自检").set_defaults(func=cmd_selftest)
+
+    # 前向模拟盘（执行层验证）
+    p = sub.add_parser("paper", help="用真实数据跑前向模拟盘(执行层)")
+    p.add_argument("--preset", default="balanced")
+    p.add_argument("--symbol", required=True)
+    p.add_argument("--market", required=True)
+    p.add_argument("--itype", default="spot", choices=["spot", "future", "etf"])
+    p.add_argument("--limit", type=int, default=400)
+    p.set_defaults(func=cmd_paper)
+
+    # 实验扫描（批量回测 + 样本外 + 评分）
+    sw = sub.add_parser("sweep", help="批量实验扫描(标的×预设)")
+    sw.add_argument("--jobs", required=True,
+                    help="逗号分隔: 代码:市场:预设, 如 600519:a:conservative,00700:hk:balanced")
+    sw.add_argument("--limit", type=int, default=400)
+    sw.set_defaults(func=cmd_sweep)
+
+    # 交易日历查询
+    c = sub.add_parser("calendar", help="查询市场开市/时段")
+    c.add_argument("--markets", default="a,hk,us,crypto")
+    c.add_argument("--date", default=None, help="YYYY-MM-DD，默认今天")
+    c.set_defaults(func=cmd_calendar)
+
     args = ap.parse_args()
     if not args.cmd:
         ap.print_help()

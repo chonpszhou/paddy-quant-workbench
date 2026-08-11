@@ -17,6 +17,10 @@
 | 回测引擎 | 向量化双均线 / 动量 / 均值回归，输出收益、回撤、夏普、胜率、**盈亏比**；内置 **walk-forward 样本外** 防过拟合 |
 | **风控最小集** | 单笔/单策略/总仓位上限、固定+ATR 止损、保本移动、单日/总回撤熔断、保守凯利；与策略代码分离、独立评审（实盘前硬门槛） |
 | **小白向导 CLI** | `quantos.py`：风险问卷 → 生成配置 → 回测 + 中文风控报告 → 模块自检（详见下方「量化交易操作系统」章节） |
+| **多标的规格引擎** | 统一描述 现货/ETF/期货 的保证金、合约乘数、手续费、做空性；风控按名义市值限仓，期货按保证金占用（规划缺口补齐） |
+| **执行层（模拟盘）** | `PaperBroker` 支持多空/期货保证金/逐日盯市；与实盘适配器(ccxt/easytrader)同接口，先模拟盘打磨再切实盘 |
+| **交易日历** | 四大市场开市/休市/时段判断（A股/港股有午休，美股按时区，数字货币 7x24），回测与调度只在交易日触发 |
+| **实验扫描** | 批量跑 标的×预设 + walk-forward 样本外 + 可上实盘评分，横向挑出真正稳健的组合（反过拟合） |
 | 个股研报 | 基于 yfinance 基本面数据自动生成 Markdown 研报 |
 | 关注列表 | 关注标的增删查（JSON 持久化） |
 | 告警监控 | 扫描关注列表，触发买卖点 / 异常换手告警 |
@@ -39,8 +43,18 @@ python quantos.py backtest --preset aggressive  --symbol BTCUSDT --market crypto
 # 3) 校验风控配置是否自洽（无网络）
 python quantos.py check
 
-# 4) 模块自检（无需联网 / 无需装 akshare，验证风控 + 回测可用）
+# 4) 模块自检（无需联网 / 无需装 akshare，验证风控 + 回测 + 多标的 + 模拟盘 + 日历可用）
 python quantos.py selftest
+
+# 5) 用真实数据跑「前向模拟盘」，验证执行层（多空/保证金/风控限仓）
+python quantos.py paper --preset balanced --symbol 600519 --market a
+python quantos.py paper --preset aggressive --symbol BTCUSDT --market c --itype spot
+
+# 6) 实验扫描：一次比较多个 标的×预设，输出可上实盘评分
+python quantos.py sweep --jobs "600519:a:conservative,00700:hk:balanced,AAPL:us:balanced,BTCUSDT:crypto:aggressive"
+
+# 7) 交易日历查询
+python quantos.py calendar --date 2026-08-11
 ```
 
 > 市场代码简写互认：`a`(A股) / `hk`或`h`(港股) / `us`或`u`(美股) / `crypto`或`c`(数字货币)，新手怎么写都行。
@@ -148,18 +162,20 @@ quant_platform/
 ├── config/
 │   ├── settings.yaml        # 市场/信号/回测/风控参数
 │   └── strategies/          # 三档预设：conservative / balanced / aggressive
-├── quantos.py               # 小白向导 CLI（init/backtest/check/selftest）
+├── quantos.py               # 小白向导 CLI（init/backtest/check/selftest/paper/sweep/calendar）
 ├── dashboard.py             # Streamlit 面板入口
 ├── OS_GUIDE.md              # 小白操作手册
 ├── requirements.txt
 ├── src/
 │   ├── data/                # 数据接入 / 统一(DataHub) / 存储(Storage+SQLStore)
-│   ├── engine/              # signals / gex / backtest(walk-forward)
+│   ├── engine/              # signals / gex / backtest(walk-forward) / instruments(多标的) / experiment(扫描)
+│   ├── broker/              # 执行层：base(抽象) / paper(模拟盘) / ccxt(加密实盘) / easytrader(A股实盘)
 │   ├── risk/                # 风控最小集（risk_control.py，与策略分离）
 │   ├── research/            # 个股研报
 │   ├── monitor/             # 关注列表 / 告警
-│   └── utils/               # 配置 / 配色 / 工具
-└── data/                    # 缓存与落库 (运行生成, 已 gitignore)
+│   └── utils/               # 配置 / 配色 / 工具 / calendar(交易日历)
+├── scripts/                 # validate_kline.py(真实行情验证) 等
+└── data/                    # 缓存/落库/真实样本 (运行生成, 已 gitignore)
 ```
 
 ## 免责声明
