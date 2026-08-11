@@ -248,6 +248,18 @@ def cmd_selftest(args) -> None:
     eq = brk.get_account()["equity"]
     assert 99000 < eq < 100000, f"同价平仓权益应在(99000,100000)，实际 {eq}"
 
+    # 现货「买入持有到期」：现金应≈初始-名义额-费，权益≈初始+浮动（抓 delta*notional 双扣 bug）
+    brk_hold = PaperBroker(initial_cash=100000, registry=reg)
+    brk_hold.mark("AAPL", 100.0)
+    assert brk_hold.submit_order(Order("AAPL", "us", "spot", "buy", 10))
+    brk_hold.mark("AAPL", 110.0)
+    acct_h = brk_hold.get_account()
+    notional_held = 10 * 100.0
+    fee_h = reg.get("AAPL", "us", "spot").trade_cost(10, 100.0)
+    assert abs(acct_h["cash"] - (100000 - notional_held - fee_h)) < 1e-6, \
+        f"买入持有现金应≈初始-名义额-费，实际 {acct_h['cash']}"
+    assert abs(acct_h["unrealized_pnl"] - 10 * (110.0 - 100.0)) < 1e-6, "浮动盈亏应=qty*(现价-成本)"
+
     # 做空：高价开空，低价平，应盈利
     brk2 = PaperBroker(initial_cash=100000, registry=reg)
     brk2.mark("AAPL", 100.0)

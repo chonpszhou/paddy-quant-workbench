@@ -102,8 +102,11 @@ class PaperBroker(BrokerAdapter):
             old_margin = spec.margin_required(abs(old_qty), old_avg) if old_qty else 0.0
             self.cash += realized - fee - (new_margin - old_margin)
         else:
-            # 现货/ETF：现金 = -delta×名义额 - 费用 + 已实现盈亏
-            self.cash += -delta * notional - fee + realized
+            # 现货/ETF：开仓按名义额收付现金（买付卖收）；已实现盈亏单独计入。
+            # 注意：notional 已含 qty，不能再乘 delta，否则"买入持有到期"会多扣 qty 倍现金，
+            # 导致 equity 错算（仅在买卖往返时才恰好抵消，故需持仓到期测试才能发现）。
+            cash_flow = -notional if delta > 0 else notional
+            self.cash += cash_flow - fee + realized
 
         self.realized_pnl += realized
         fill = Fill(symbol=order.symbol, market=order.market, side=order.side,
