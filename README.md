@@ -21,6 +21,7 @@
 | **执行层（模拟盘）** | `PaperBroker` 支持多空/期货保证金/逐日盯市；与实盘适配器(ccxt/easytrader)同接口，先模拟盘打磨再切实盘 |
 | **交易日历** | 四大市场开市/休市/时段判断（A股/港股有午休，美股按时区，数字货币 7x24），回测与调度只在交易日触发 |
 | **实验扫描** | 批量跑 标的×预设 + walk-forward 样本外 + 可上实盘评分，横向挑出真正稳健的组合（反过拟合） |
+| **参数寻优** | 给定策略在参数网格上遍历，用 **walk-forward 样本外指标排序**（而非样本内），并检测过拟合（样本内/样本外夏普比），自动挑出最稳健参数；通过门槛(≥70)可落为部署预设 |
 | 个股研报 | 基于 yfinance 基本面数据自动生成 Markdown 研报 |
 | 关注列表 | 关注标的增删查（JSON 持久化） |
 | 告警监控 | 扫描关注列表，触发买卖点 / 异常换手告警 |
@@ -55,6 +56,12 @@ python quantos.py sweep --jobs "600519:a:conservative,00700:hk:balanced,AAPL:us:
 
 # 7) 交易日历查询
 python quantos.py calendar --date 2026-08-11
+
+# 8) 参数寻优：用真实数据 + walk-forward 样本外，自动找稳健参数（防过拟合）
+python quantos.py optimize --symbol 600519 --market a --strategy sma_cross --top 5
+python quantos.py optimize --symbol AAPL   --market us --strategy momentum --top 5
+# 若最优组合评分≥70 且未过拟合，加 --save-best 落盘为可部署预设
+python quantos.py optimize --symbol AAPL --market us --strategy momentum --top 5 --save-best
 ```
 
 > 市场代码简写互认：`a`(A股) / `hk`或`h`(港股) / `us`或`u`(美股) / `crypto`或`c`(数字货币)，新手怎么写都行。
@@ -162,7 +169,7 @@ quant_platform/
 ├── config/
 │   ├── settings.yaml        # 市场/信号/回测/风控参数
 │   └── strategies/          # 三档预设：conservative / balanced / aggressive
-├── quantos.py               # 小白向导 CLI（init/backtest/check/selftest/paper/sweep/calendar）
+├── quantos.py               # 小白向导 CLI（init/backtest/check/selftest/paper/sweep/calendar/optimize）
 ├── dashboard.py             # Streamlit 面板入口
 ├── OS_GUIDE.md              # 小白操作手册
 ├── requirements.txt
