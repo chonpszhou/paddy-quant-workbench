@@ -29,6 +29,7 @@ from src.data.unified import DataHub
 from src.engine.backtest import Backtester, _STRATS
 from src.engine.instruments import InstrumentRegistry
 from src.engine.experiment import ExperimentRunner
+from src.engine.optimizer import ParameterOptimizer, DEFAULT_SPACES, PASS_SCORE
 from src.broker import PaperBroker, Order
 from src.risk.risk_control import RiskConfig, RiskController
 from src.utils import calendar as mcal
@@ -273,7 +274,13 @@ def cmd_selftest(args) -> None:
     assert mcal.is_trading_day("crypto", date(2026, 1, 1)) is True
     assert mcal.is_trading_day("a", date(2026, 1, 1)) is False
 
-    print("✅ selftest 通过：风控 + 回测 + 多标的规格 + 模拟盘 + 日历 均正常")
+    # 参数寻优器（离线，小参数空间）
+    from src.engine.optimizer import ParameterOptimizer
+    opt = ParameterOptimizer(settings)
+    res = opt.optimize(df, "sma_cross", space={"fast": [3, 5], "slow": [10, 20]}, top_k=2)
+    assert len(res) >= 1 and hasattr(res[0], "score")
+
+    print("✅ selftest 通过：风控 + 回测 + 多标的规格 + 模拟盘 + 日历 + 寻优器 均正常")
     print_report(r, risk, "SELFTEST", "demo")
 
 
@@ -396,6 +403,56 @@ def cmd_calendar(args) -> None:
         print(f"  {mkt:7s} {str(d or date.today())}：{label} ｜ 时段={sess}")
 
 
+def cmd_optimize(args) -> None:
+    """参数寻优：用真实数据 + walk-forward 样本外，自动找稳健参数。
+
+    排序依据是样本外指标，而非样本内——避免挑出"看起来很美"的过拟合参数。
+    通过门槛(评分≥70 且未过拟合)的参数可 --save-best 落为新的策略预设。
+    """
+    settings = load_settings()
+    market = norm_market(args.market)
+    df = _fetch_df(args.symbol, market, settings, args.limit)
+    if df is None or df.empty:
+        raise SystemExit("拉不到数据（检查代码/网络/本地 data/real）")
+
+    strategy = args.strategy
+    if strategy not in DEFAULT_SPACES:
+        raise SystemExit(f"支持寻优的策略: {list(DEFAULT_SPACES)}")
+
+    opt = ParameterOptimizer(settings)
+    results = opt.optimize(df, strategy, top_k=args.top)
+    ParameterOptimizer.print_results(results, strategy, f"{args.symbol}({market})")
+
+    # 过拟合整体提示
+    overfit = [r for r in results if r.overfit_flag]
+    if overfit:
+        print(f"\n⚠️ {len(overfit)}/{len(results)} 个组合被标记可能过拟合（样本内远好于样本外），已自动降权。")
+
+    best = results[0] if results else None
+    if args.save_best and best is not None:
+        if best.score >= PASS_SCORE and not best.overfit_flag:
+            name = f"{args.symbol}_{market}_opt"
+            preset = {
+                "name": f"寻优·{args.symbol}({market})",
+                "profile": "optimized",
+                "strategy": strategy,
+                "params": best.params,
+                "markets": [market],
+                "instruments": ["spot", "etf"],
+                "risk_override": settings.get("risk", {}),
+                "note": (f"由参数寻优自动生成（评分 {best.score}，"
+                         f"样本外夏普 {best.out_sample.get('sharpe', float('nan')):.2f}）。"
+                         f"仍需走模拟盘灰度验证后才可实盘。"),
+            }
+            out = ROOT / "config" / "strategies" / f"{name}.yaml"
+            out.write_text(yaml.safe_dump(preset, allow_unicode=True), encoding="utf-8")
+            print(f"\n✅ 已落盘可部署预设: {out}")
+            print(f"   验证: python quantos.py paper --preset {name} --symbol {args.symbol} --market {market}")
+        else:
+            print(f"\n⚠️ 最优组合评分 {best.score} < {PASS_SCORE} 或已过拟合，"
+                  f"按纪律不落盘——请换标的/策略或接受模拟盘观察。")
+
+
 def main():
     ap = argparse.ArgumentParser(description="量化交易操作系统 · 小白向导")
     sub = ap.add_subparsers(dest="cmd")
@@ -431,6 +488,16 @@ def main():
     c.add_argument("--markets", default="a,hk,us,crypto")
     c.add_argument("--date", default=None, help="YYYY-MM-DD，默认今天")
     c.set_defaults(func=cmd_calendar)
+
+    # 参数寻优（walk-forward 样本外排序 + 过拟合检测）
+    o = sub.add_parser("optimize", help="参数寻优(样本外排序)")
+    o.add_argument("--symbol", required=True)
+    o.add_argument("--market", required=True)
+    o.add_argument("--strategy", default="sma_cross", choices=list(DEFAULT_SPACES))
+    o.add_argument("--top", type=int, default=5, help="返回 Top-K 参数组合")
+    o.add_argument("--limit", type=int, default=400)
+    o.add_argument("--save-best", action="store_true", help="把通过门槛的最优参数落为预设")
+    o.set_defaults(func=cmd_optimize)
 
     args = ap.parse_args()
     if not args.cmd:
