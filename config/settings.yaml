@@ -1,6 +1,8 @@
 # Paddy 量化工作台配置
 
 markets:
+  a:
+    provider: akshare        # A股 (免费接口, 前复权)
   us:
     provider: yfinance
     symbol_suffix: ""        # 美股无后缀, 如 AAPL
@@ -13,6 +15,7 @@ markets:
 
 data:
   cache_dir: "data/cache"
+  sql_db: "data/market.db"   # 历史行情落库(SQLite)
   use_cache: true
   cache_days: 1              # 缓存有效期(天)
 
@@ -28,6 +31,20 @@ signal:
 backtest:
   initial_capital: 100000
   commission: 0.001          # 单边佣金 0.1%
+
+# 风控最小集（实盘前硬门槛，任何策略都必须套用）
+risk:
+  max_single_position_pct: 0.02     # 单笔 ≤ 2%
+  max_strategy_position_pct: 0.30   # 单策略 ≤ 30%
+  max_total_position_pct: 0.50      # 总开仓 ≤ 50%
+  stop_loss_pct: 0.03               # 单笔固定止损 -3%
+  use_atr_stop: true
+  atr_stop_multiplier: 1.5
+  breakeven_at_profit_pct: 0.06     # 浮盈 ≥ +6% → 保本
+  daily_loss_circuit_pct: 0.05      # 单日 -5% 熔断
+  max_drawdown_circuit_pct: 0.20    # 总回撤 -20% 熔断
+  kelly_fraction: 0.5               # 半凯利（保守）
+  no_chase_on_disconnect: true
 
 watchlist_path: "data/watchlist.json"
 price_alert_path: "data/price_alerts.json"

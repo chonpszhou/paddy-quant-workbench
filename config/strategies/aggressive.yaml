@@ -1,0 +1,16 @@
+# 预设策略：进取型（仅限经验者）
+# 面向：已跑通模拟盘、理解杠杆与归零风险、用闲钱博弈的用户。
+name: 进取型·博弈
+profile: aggressive
+strategy: momentum                # 动量：追涨杀跌，吃最强一段，回撤也最猛
+params:
+  window: 20
+markets: [us, crypto]            # 不含 A股（T+1 限制，动量效率低）
+instruments: [spot, future]
+risk_override:
+  max_single_position_pct: 0.03   # 略放宽，但仍封顶
+  max_total_position_pct: 0.60
+  stop_loss_pct: 0.05             # 波动大，止损放宽到 -5%
+  daily_loss_circuit_pct: 0.08
+  max_drawdown_circuit_pct: 0.30
+note: 高收益伴随高归零风险。杠杆/合约可能让本金归零，只投入"亏光也不影响生活"的闲钱。

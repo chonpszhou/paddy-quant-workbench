@@ -74,6 +74,11 @@ class Backtester:
         sharpe = float(np.sqrt(252) * strat_ret.mean() / (strat_ret.std() + 1e-12))
         nonzero = strat_ret[strat_ret != 0]
         win_rate = float((strat_ret > 0).sum() / (len(nonzero) + 1e-12))
+        wins = strat_ret[strat_ret > 0]
+        losses = -strat_ret[strat_ret < 0]
+        avg_win = float(wins.mean()) if len(wins) else 0.0
+        avg_loss = float(losses.mean()) if len(losses) else 0.0
+        pl_ratio = float(avg_win / (avg_loss + 1e-12))
 
         return {
             "strategy": strategy,
@@ -83,5 +88,28 @@ class Backtester:
             "max_drawdown": max_dd,
             "sharpe": sharpe,
             "win_rate": win_rate,
+            "profit_loss_ratio": pl_ratio,
             "n_trades": int(trade.sum()),
         }
+
+    @staticmethod
+    def walk_forward(df: pd.DataFrame, strategy: str = "sma_cross",
+                     train_size: int = 252, test_size: int = 63,
+                     step: int = 63, **params) -> list[dict]:
+        """滚动窗口样本外验证（反过拟合核心）。返回每段样本外绩效。"""
+        results = []
+        close = df["close"]
+        n = len(close)
+        i = train_size
+        while i + test_size <= n:
+            train = df.iloc[i - train_size:i]
+            test = df.iloc[i:i + test_size]
+            bt = Backtester()
+            try:
+                r = bt.run(test, strategy=strategy, **params)
+                r["window_start"] = str(test.index[0].date())
+                results.append(r)
+            except Exception:
+                pass
+            i += step
+        return results

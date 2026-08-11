@@ -1,0 +1,18 @@
+# 预设策略：低风险（守护型）
+# 面向：刚入门、受不了大波动、先把"不亏大钱"刻进肌肉记忆的小白。
+name: 守护型·低风险
+profile: conservative
+strategy: mean_reversion          # 均值回归：跌多了买、涨多了卖，胜率较高、回撤较小
+params:
+  window: 20
+  n_std: 2.0
+markets: [a, us, hk, crypto]      # 四市场均可跑
+instruments: [spot, etf]          # 仅现货/ETF，不做期货杠杆
+# 风控：在全局风控最小集之上进一步收紧（更保守）
+risk_override:
+  max_single_position_pct: 0.01   # 单笔 ≤ 1%
+  max_total_position_pct: 0.30    # 总开仓 ≤ 30%
+  stop_loss_pct: 0.02             # 单笔 -2% 就跑
+  daily_loss_circuit_pct: 0.03    # 单日 -3% 停手
+  max_drawdown_circuit_pct: 0.12  # 总回撤 -12% 全面暂停
+note: 目标不是暴富，是"小亏小赚、长期活着"。先跑模拟盘 1 个月再谈实盘。

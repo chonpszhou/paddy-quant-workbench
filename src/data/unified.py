@@ -9,7 +9,8 @@ import pandas as pd
 
 from .providers.yfinance_provider import YFinanceProvider
 from .providers.binance_provider import BinanceProvider
-from .storage import Storage
+from .providers.akshare_provider import AkshareProvider
+from .storage import Storage, SQLStore
 from ..utils.common import load_settings
 
 
@@ -17,6 +18,9 @@ class DataHub:
     def __init__(self, settings: dict | None = None):
         self.settings = settings or load_settings()
         self.storage = Storage(self.settings["data"]["cache_dir"])
+        # 历史数据落库（规划优先级 #1）：每次取到的新数据增量写入 SQLite
+        db_path = self.settings["data"].get("sql_db", "data/market.db")
+        self.sql = SQLStore(db_path)
 
         mk = self.settings["markets"]
         self.providers = {
@@ -24,6 +28,9 @@ class DataHub:
             "hk": YFinanceProvider(mk["hk"]["symbol_suffix"]),
             "crypto": BinanceProvider(mk["crypto"]["quote_asset"]),
         }
+        # A股（akshare）按需注册：配置里声明了 a 市场才启用
+        if "a" in mk:
+            self.providers["a"] = AkshareProvider()
 
     def get(self, symbol: str, market: str = "us", timeframe: str = "1d",
             limit: int = 200, use_cache: bool = True) -> pd.DataFrame:
@@ -39,4 +46,9 @@ class DataHub:
         df = self.providers[market].get_ohlcv(symbol, timeframe, limit)
         if not df.empty:
             self.storage.save(key, df)
+            # 落库（失败不影响取数）
+            try:
+                self.sql.upsert(df, symbol, market, timeframe)
+            except Exception:
+                pass
         return df

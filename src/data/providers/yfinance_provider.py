@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import yfinance as yf
 
 from .base import BaseProvider
 from ...utils.common import tf_to_yf_interval
@@ -31,6 +30,11 @@ class YFinanceProvider(BaseProvider):
         return s + self.symbol_suffix
 
     def get_ohlcv(self, symbol: str, timeframe: str = "1d", limit: int = 200) -> pd.DataFrame:
+        try:
+            import yfinance as yf
+        except ImportError:
+            raise RuntimeError("未安装 yfinance: pip install yfinance "
+                               "-i https://pypi.tuna.tsinghua.edu.cn/simple")
         ticker = self._normalize(symbol)
         raw_tf = "1h" if timeframe == "4h" else timeframe
         interval = tf_to_yf_interval(raw_tf)

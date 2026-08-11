@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import requests
 
 from .base import BaseProvider
 from ...utils.common import tf_to_binance_interval
@@ -17,6 +16,10 @@ class BinanceProvider(BaseProvider):
         self.quote = quote_asset.upper()
 
     def get_ohlcv(self, symbol: str, timeframe: str = "1d", limit: int = 200) -> pd.DataFrame:
+        try:
+            import requests
+        except ImportError:
+            raise RuntimeError("未安装 requests: pip install requests")
         sym = symbol.upper()
         pair = sym if sym.endswith(self.quote) else f"{sym}{self.quote}"
 

@@ -1,6 +1,8 @@
 # Paddy 量化工作台
 
-面向 **美股 / 港股 / 加密货币** 的私有量化交易工作平台（参考小隐寺社区产品形态，做成可本地运行的私域工作台）。
+面向 **A股 / 港股 / 美股 / 加密货币** 四大市场、覆盖 **现货 / ETF / 期货** 多标的的私有量化交易操作系统（参考小隐寺社区产品形态，做成可本地运行的私域工作台）。
+
+> 设计目标：面向金融小白，提供「**可回测、可复盘、强制风控、灰度上实盘**」的纪律化交易操作系统。本系统**不承诺稳定获利**——它只保证任何策略在实盘前必须过回测、过样本外、且强制套用风控最小集。盈亏由市场决定。
 
 配色采用国际惯例：**涨 = 绿，跌 = 红**（目标市场非 A 股）。
 
@@ -8,14 +10,50 @@
 
 | 模块 | 说明 |
 |------|------|
-| 数据接入 | 美股/港股走 yfinance，加密走 Binance 公开 API；统一接口 + 本地 parquet 缓存 |
+| 数据接入 | A股走 akshare（前复权），美股/港股走 yfinance，加密走 Binance 公开 API；统一接口 + 本地 parquet 缓存 |
+| 历史落库 | 每次取数增量写入 SQLite（`data/market.db`），回测不再重复拉取（规划优先级 #1） |
 | 信号引擎 | 多周期（1d/4h/1h/15m）买卖点：均线交叉 + RSI + 量能异常换手 + 趋势连续性 |
 | 期权 GEX | 美股期权 Gamma Exposure 估算：Call Wall / Put Wall / Zero Gamma |
-| 回测引擎 | 向量化双均线 / 动量 / 均值回归，输出收益、回撤、夏普、胜率 |
+| 回测引擎 | 向量化双均线 / 动量 / 均值回归，输出收益、回撤、夏普、胜率、**盈亏比**；内置 **walk-forward 样本外** 防过拟合 |
+| **风控最小集** | 单笔/单策略/总仓位上限、固定+ATR 止损、保本移动、单日/总回撤熔断、保守凯利；与策略代码分离、独立评审（实盘前硬门槛） |
+| **小白向导 CLI** | `quantos.py`：风险问卷 → 生成配置 → 回测 + 中文风控报告 → 模块自检（详见下方「量化交易操作系统」章节） |
 | 个股研报 | 基于 yfinance 基本面数据自动生成 Markdown 研报 |
 | 关注列表 | 关注标的增删查（JSON 持久化） |
 | 告警监控 | 扫描关注列表，触发买卖点 / 异常换手告警 |
 | Web 面板 | Streamlit 多页：行情看板 / 信号扫描 / 回测 / 研报 / GEX / 关注列表 |
+
+## 量化交易操作系统（小白向导）
+
+核心入口是仓库根目录的 `quantos.py`，面向没有编程基础的金融小白，把「开户 → 选策略 → 回测 → 风控评审 → 模拟盘」串成一条命令链。
+
+```bash
+# 1) 开户问卷：按你的风险承受力生成 config/user_profile.yaml，并推荐预设
+python quantos.py init
+
+# 2) 回测 + 中文风控报告（默认模拟盘，不碰实盘）
+python quantos.py backtest --preset conservative --symbol 600519 --market a      # A股 贵州茅台
+python quantos.py backtest --preset balanced    --symbol AAPL   --market us     # 美股
+python quantos.py backtest --preset balanced    --symbol 0700   --market hk     # 港股
+python quantos.py backtest --preset aggressive  --symbol BTCUSDT --market crypto # 数字货币
+
+# 3) 校验风控配置是否自洽（无网络）
+python quantos.py check
+
+# 4) 模块自检（无需联网 / 无需装 akshare，验证风控 + 回测可用）
+python quantos.py selftest
+```
+
+> 市场代码简写互认：`a`(A股) / `hk`或`h`(港股) / `us`或`u`(美股) / `crypto`或`c`(数字货币)，新手怎么写都行。
+
+预设策略（三档风险，见 `config/strategies/`）：
+
+| 预设 | 定位 | 策略 | 工具 | 风控（在全局最小集上进一步收紧） |
+|------|------|------|------|------|
+| `conservative` | 守护型·低风险 | 均值回归 | 现货/ETF | 单笔≤1% / 总≤30% / 止损-2% / 单日熔断-3% / 总回撤-12% |
+| `balanced` | 均衡型·进阶 | 双均线 | 现货/ETF/期货 | 全局最小集 |
+| `aggressive` | 进取型·博弈 | 动量 | 美股/加密/期货 | 全局最小集（更宽） |
+
+完整操作手册见 **[OS_GUIDE.md](OS_GUIDE.md)**；配套知识库在 Obsidian「量化交易」库（总览见 `00_量化交易支撑体系规划.md`）。
 
 ## 子项目：星辰投研团
 
@@ -107,16 +145,21 @@ docker run -d --name paddy-quant -p 8501:8501 \
 
 ```
 quant_platform/
-├── config/settings.yaml     # 市场/信号/回测参数
+├── config/
+│   ├── settings.yaml        # 市场/信号/回测/风控参数
+│   └── strategies/          # 三档预设：conservative / balanced / aggressive
+├── quantos.py               # 小白向导 CLI（init/backtest/check/selftest）
 ├── dashboard.py             # Streamlit 面板入口
+├── OS_GUIDE.md              # 小白操作手册
 ├── requirements.txt
 ├── src/
-│   ├── data/                # 数据接入 / 统一 / 存储
-│   ├── engine/              # signals / gex / backtest
+│   ├── data/                # 数据接入 / 统一(DataHub) / 存储(Storage+SQLStore)
+│   ├── engine/              # signals / gex / backtest(walk-forward)
+│   ├── risk/                # 风控最小集（risk_control.py，与策略分离）
 │   ├── research/            # 个股研报
 │   ├── monitor/             # 关注列表 / 告警
 │   └── utils/               # 配置 / 配色 / 工具
-└── data/                    # 缓存与关注列表 (运行生成)
+└── data/                    # 缓存与落库 (运行生成, 已 gitignore)
 ```
 
 ## 免责声明

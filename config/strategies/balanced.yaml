@@ -1,0 +1,17 @@
+# 预设策略：均衡型（进阶）
+# 面向：能接受正常波动、希望兼顾收益与风险的中段用户。
+name: 均衡型·进阶
+profile: balanced
+strategy: sma_cross               # 双均线：趋势跟随，赚"主升段"，亏在震荡
+params:
+  fast: 5
+  slow: 20
+markets: [a, us, hk, crypto]
+instruments: [spot, etf, future] # 含期货（需合约账户，默认模拟）
+risk_override:
+  max_single_position_pct: 0.02   # 维持全局最小集
+  max_total_position_pct: 0.50
+  stop_loss_pct: 0.03
+  daily_loss_circuit_pct: 0.05
+  max_drawdown_circuit_pct: 0.20
+note: 趋势策略在单边市赚钱、震荡市回吐；务必配合 walk-forward 验证参数稳健性。
