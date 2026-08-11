@@ -227,6 +227,41 @@ def cmd_selftest(args) -> None:
     r = bt.run(df, "sma_cross")
     assert "profit_loss_ratio" in r and "sharpe" in r
 
+    # —— 新策略（OHLC 类）自检：4 个新策略可跑、信号合法、缺列清晰报错 ——
+    from src.engine.backtest import _STRATS as _SIG_FUNCS
+    rng2 = np.random.default_rng(7)
+    m = 300
+    oclose = 100 * (1 + pd.Series(rng2.normal(0.0003, 0.02, m))).cumprod()
+    ohlc = pd.DataFrame({
+        "open": oclose.shift(1).fillna(oclose.iloc[0]),
+        "high": oclose * (1 + rng2.uniform(0, 0.012, m)),
+        "low": oclose * (1 - rng2.uniform(0, 0.012, m)),
+        "close": oclose,
+        "volume": rng2.integers(1000, 5000, m).astype(float),
+    })
+    for strat, sparams in [
+        ("donchian", {"window": 20}),
+        ("dual_thrust", {"k1": 0.5, "k2": 0.5}),
+        ("rsi_reversal", {"period": 14, "oversold": 30, "overbought": 70}),
+        ("atr_channel", {"window": 20, "mult": 2.0}),
+    ]:
+        sig = _SIG_FUNCS[strat](ohlc, **sparams)
+        assert len(sig) == m, f"{strat} 信号长度错误"
+        assert set(int(v) for v in np.unique(sig.dropna())).issubset({-1, 0, 1}), \
+            f"{strat} 信号含非法值"
+        assert not sig.isna().any(), f"{strat} 信号含 NaN"
+        rr = bt.run(ohlc, strat, **sparams)
+        assert all(np.isfinite(rr[k]) for k in ("sharpe", "total_return", "max_drawdown")), \
+            f"{strat} 指标含非有限值"
+    # OHLC 缺列应清晰报错（不静默崩溃）
+    bad_df = pd.DataFrame({"close": oclose})
+    for strat in ("donchian", "dual_thrust", "atr_channel"):
+        try:
+            bt.run(bad_df, strat)
+            raise AssertionError(f"{strat} 缺 OHLC 未报错")
+        except ValueError:
+            pass
+
     # —— 多标的规格 + 模拟盘 + 日历 自检 ——
     from src.engine.instruments import InstrumentRegistry
     from src.broker import PaperBroker, Order
@@ -329,7 +364,7 @@ def cmd_paper(args) -> None:
     spec = registry.get(args.symbol, market, itype)
     broker = PaperBroker(initial_cash=settings["backtest"]["initial_capital"], registry=registry)
 
-    sig = _STRATS[preset["strategy"]](df["close"], **preset.get("params", {})).shift(1).fillna(0)
+    sig = _STRATS[preset["strategy"]](df, **preset.get("params", {})).shift(1).fillna(0)
 
     n_entry = n_exit = 0
     for i in range(1, len(df)):
@@ -445,7 +480,7 @@ def cmd_optimize(args) -> None:
 
     best = results[0] if results else None
     if args.save_best and best is not None:
-        if best.score >= PASS_SCORE and not best.overfit_flag:
+        if best.score >= PASS_SCORE and best.gate_ok and not best.overfit_flag:
             name = f"{args.symbol}_{market}_opt"
             preset = {
                 "name": f"寻优·{args.symbol}({market})",

@@ -1,0 +1,20 @@
+instruments:
+- spot
+- etf
+markets:
+- hk
+name: 寻优·09999(hk)·rsi_reversal
+note: 参数寻优自动生成（评分 93.7，样本外夏普 2.41，walk_forward+holdout）。须先经 PaperBroker 模拟盘灰度验证，且仅小资金实盘。
+params:
+  overbought: 70
+  oversold: 25
+  period: 7
+profile: optimized
+risk_override:
+  daily_loss_circuit_pct: 0.05
+  max_drawdown_circuit_pct: 0.2
+  max_single_position_pct: 0.02
+  max_strategy_position_pct: 0.3
+  max_total_position_pct: 0.5
+  stop_loss_pct: 0.03
+strategy: rsi_reversal

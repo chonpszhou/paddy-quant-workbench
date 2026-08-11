@@ -74,6 +74,20 @@ python quantos.py optimize --symbol AAPL --market us --strategy momentum --top 5
 | `balanced` | 均衡型·进阶 | 双均线 | 现货/ETF/期货 | 全局最小集 |
 | `aggressive` | 进取型·博弈 | 动量 | 美股/加密/期货 | 全局最小集（更宽） |
 
+**内置策略库（7 个，信号函数统一接收整张 `df`，OHLC 类策略需含开高低收行情）：**
+
+| 策略 | 类型 | 思路 | 是否需要 OHLC |
+|------|------|------|---------------|
+| `sma_cross` | 趋势 | 双均线金叉/死叉 | 否（close） |
+| `momentum` | 趋势 | N 日动量方向 | 否（close） |
+| `mean_reversion` | 均值回归 | z-score 偏离均值反向 | 否（close） |
+| `donchian` | 趋势跟踪 | 海龟式通道突破（用 t-1 通道防未来函数） | 是 |
+| `dual_thrust` | 日内突破 | 前日波动区间构造上下触发线 | 是 |
+| `rsi_reversal` | 均值回归 | RSI 超卖做多/超买卖空 | 否（close） |
+| `atr_channel` | 趋势跟踪 | 中轨 ± mult×ATR 波动自适应通道 | 是 |
+
+> 诚实提醒：参数寻优在 23 标的 × 7 策略（161 组）上跑双闸门（多周期 walk-forward 样本外 + 严格 holdout + 过拟合检测），当前仅 **1 组**通过（09999 港股 rsi_reversal，评分 93.7，样本外夏普 2.41，未过拟合）。这正说明稳健 Alpha 稀缺——系统的价值在于**自动拒绝其余 160 组**，而非制造"看起来很美"的曲线。
+
 完整操作手册见 **[OS_GUIDE.md](OS_GUIDE.md)**；配套知识库在 Obsidian「量化交易」库（总览见 `00_量化交易支撑体系规划.md`）。
 
 ## 子项目：星辰投研团
