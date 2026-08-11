@@ -259,6 +259,9 @@ def cmd_selftest(args) -> None:
     assert abs(acct_h["cash"] - (100000 - notional_held - fee_h)) < 1e-6, \
         f"买入持有现金应≈初始-名义额-费，实际 {acct_h['cash']}"
     assert abs(acct_h["unrealized_pnl"] - 10 * (110.0 - 100.0)) < 1e-6, "浮动盈亏应=qty*(现价-成本)"
+    # 权益应≈期初-费+浮盈（cash+持仓市值），抓 equity=cash+unrealized 漏算成本基数
+    assert abs(acct_h["equity"] - (100000 - fee_h + 10 * (110.0 - 100.0))) < 1e-6, \
+        f"买入持有权益应≈期初-费+浮盈，实际 {acct_h['equity']}"
 
     # 做空：高价开空，低价平，应盈利
     brk2 = PaperBroker(initial_cash=100000, registry=reg)

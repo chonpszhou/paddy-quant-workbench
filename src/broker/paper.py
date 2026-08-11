@@ -49,7 +49,27 @@ class PaperBroker(BrokerAdapter):
         return tot
 
     def equity(self) -> float:
-        return self.cash + self.unrealized()
+        """账户权益（逐日盯市）。
+
+        - 现货/ETF：权益 = 现金 + 持仓市值（带符号，空头为负负债）。
+        - 期货：现金已含保证金与已实现盈亏，权益 = 现金 + 浮动盈亏（盯市）。
+        不能用 cash + unrealized 统一处理现货：买入后现金已扣成本基数，
+        而 unrealized 只是浮盈，会少算一个成本基数导致权益低估。
+        """
+        tot = self.cash
+        for sym, pos in self.positions.items():
+            if pos.qty == 0:
+                continue
+            price = self.marks.get(sym)
+            if price is None:
+                continue
+            spec = self.registry.get(pos.symbol, pos.market, pos.itype)
+            per = spec.multiplier * spec.contract_unit
+            if spec.is_leveraged:
+                tot += pos.qty * (price - pos.avg_price) * per
+            else:
+                tot += pos.qty * price * per
+        return tot
 
     # ------------------------------------------------------------------
     def submit_order(self, order: Order) -> Fill | None:
