@@ -121,8 +121,8 @@ python quantos.py selftest
 
 ## 6. 回测与防过拟合纪律
 
-`src/engine/backtest.py` 提供三种基础策略：`sma_cross`（双均线）、`momentum`（动量）、`mean_reversion`（均值回归）。
-**严格防未来函数**：信号用 `shift(1)` 后的仓位计算，避免偷看次日价格。
+`src/engine/backtest.py` 提供 **7 个策略**：`sma_cross`（双均线）、`momentum`（动量）、`mean_reversion`（均值回归）、`rsi_reversal`（RSI 逆向均值回归，close）、`donchian`（海龟通道突破）、`dual_thrust`（日内突破）、`atr_channel`（ATR 通道突破·波动自适应，后三者需 OHLC 行情）。
+**严格防未来函数**：信号用 `shift(1)` 后的仓位计算，避免偷看次日价格；OHLC 类策略用 t-1 通道/区间构造触发线，同样不偷看。
 
 每份回测报告都带 **walk-forward 样本外验证**：把历史切成多段，前段训练、后段测试滚动进行。
 - 样本内漂亮、样本外稀烂 = 过拟合警告，绝不上实盘。
