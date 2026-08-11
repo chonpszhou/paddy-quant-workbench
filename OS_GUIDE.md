@@ -70,6 +70,22 @@ python quantos.py selftest
 
 用固定随机种子跑风控 + 回测单元断言，确保代码没被改坏。
 
+### 2.1 参数寻优 / 组合层 / 实盘（进阶）
+
+```bash
+# 参数寻优：walk-forward 样本外排序 + 双闸门，评分≥70 且未过拟合才 --save-best 落盘
+python quantos.py optimize --symbol 09999 --market hk --strategy rsi_reversal --top 5 --save-best
+
+# 组合层：把多条 标的×策略 腿合成一个组合，输出聚合绩效 + 相关性诊断（防"伪分散"）
+python quantos.py combine --jobs "09999:hk:09999_hk_rsi_reversal_opt,AAPL:us:balanced" --weight equal
+
+# 实盘执行层：默认 DRY-RUN（绝不发真单），双闸门才真正下单
+python quantos.py live --preset 09999_hk_rsi_reversal_opt --symbol 09999 --market hk
+```
+
+- 每次寻优/扫描/实盘都会落盘 `data/experiments/runs.jsonl`（实验追踪，便于横向比较）。
+- `live` 双闸门：① `settings.yaml` 打开 `live_trading.enabled` ② 显式 `--i-understand-real-money-risk`；**缺一不可发真单**。
+
 ---
 
 ## 3. 三档预设怎么选
@@ -138,11 +154,11 @@ python quantos.py selftest
 |------|------|----------------|
 | 一·研究地基 | 数据可落库、回测可复现 | `DataHub` + `SQLStore` + `Backtester` |
 | 二·策略验证 | 策略库版本化、进模拟盘 | `config/strategies/*` + walk-forward |
-| 三·小资金实盘 | 最小风控 + 灰度 | `src/risk` + 未来执行层（easytrader/ccxt） |
-| 四·迭代优化 | 组合管理、月度归因 | 待建（MLflow / 组合层） |
+| 三·小资金实盘 | 最小风控 + 灰度 | `src/risk` + `src/broker/live`（dry-run 双闸门安全层）+ ccxt/easytrader 适配器 |
+| 四·迭代优化 | 组合管理、月度归因 | `src/engine/portfolio`（组合层）+ `src/utils/experiment_log`（实验追踪） |
 
-> 当前进度（2026-08-11）：落库 ✅、风控最小集 ✅、A股数据 ✅、小白向导 ✅、三预设 ✅。
-> 待建：实盘执行层、交易日历、组合层、实验管理。详见 Obsidian `00_量化交易支撑体系规划.md` 第 3 节"现状盘点"。
+> 当前进度（2026-08-11）：落库 ✅、风控最小集 ✅、四市场真实数据 ✅、小白向导 ✅、七策略库 ✅、双闸门寻优 ✅、组合层 ✅、实验追踪 ✅、实盘安全层（dry-run）✅。
+> 仍待建：实盘适配器的**真实下单灰度**（需本机配置券商/交易所凭证 + 小资金验证）、更长样本与更大标的池、ML 特征工程。详见 Obsidian `00_量化交易支撑体系规划.md` 第 3 节"现状盘点"。
 
 ---
 

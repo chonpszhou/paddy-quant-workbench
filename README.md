@@ -62,7 +62,19 @@ python quantos.py optimize --symbol 600519 --market a --strategy sma_cross --top
 python quantos.py optimize --symbol AAPL   --market us --strategy momentum --top 5
 # 若最优组合评分≥70 且未过拟合，加 --save-best 落盘为可部署预设
 python quantos.py optimize --symbol AAPL --market us --strategy momentum --top 5 --save-best
+
+# 9) 组合层（ensemble）：把多条 标的×策略 腿合成一个组合，输出聚合绩效 + 相关性诊断
+python quantos.py combine --jobs "09999:hk:09999_hk_rsi_reversal_opt,AAPL:us:balanced,600519:a:conservative" --weight equal
+python quantos.py combine --jobs "09999:hk:09999_hk_rsi_reversal_opt,AAPL:us:balanced" --weight vol   # 波动率目标加权
+
+# 10) 实盘执行层（默认 DRY-RUN，绝不发真单；双闸门才真实下单）
+#     —— DRY-RUN 沙盘推演（安全，仅记录"本应下的单"，不触碰交易所）：
+python quantos.py live --preset 09999_hk_rsi_reversal_opt --symbol 09999 --market hk --itype spot
+#     —— 真正下单需：① settings.yaml 打开 live_trading.enabled=True ② 显式 --i-understand-real-money-risk
+#        二者缺一，仍只走 dry-run。详见「实盘安全」章节。
 ```
+
+> ⚠️ 寻优/扫描/实盘每次运行都会落盘到 `data/experiments/runs.jsonl`（穷人版 MLflow 实验追踪），便于横向比较与防回归。
 
 > 市场代码简写互认：`a`(A股) / `hk`或`h`(港股) / `us`或`u`(美股) / `crypto`或`c`(数字货币)，新手怎么写都行。
 
@@ -183,14 +195,15 @@ quant_platform/
 ├── config/
 │   ├── settings.yaml        # 市场/信号/回测/风控参数
 │   └── strategies/          # 三档预设：conservative / balanced / aggressive
-├── quantos.py               # 小白向导 CLI（init/backtest/check/selftest/paper/sweep/calendar/optimize）
+├── quantos.py               # 小白向导 CLI（init/backtest/check/selftest/paper/sweep/calendar/optimize/combine/live）
 ├── dashboard.py             # Streamlit 面板入口
 ├── OS_GUIDE.md              # 小白操作手册
 ├── requirements.txt
 ├── src/
 │   ├── data/                # 数据接入 / 统一(DataHub) / 存储(Storage+SQLStore)
-│   ├── engine/              # signals / gex / backtest(walk-forward) / instruments(多标的) / experiment(扫描)
-│   ├── broker/              # 执行层：base(抽象) / paper(模拟盘) / ccxt(加密实盘) / easytrader(A股实盘)
+│   ├── engine/              # signals / gex / backtest(walk-forward) / instruments(多标的) / experiment(扫描) / optimizer(双闸门寻优) / portfolio(组合层)
+│   ├── broker/              # 执行层：base(抽象) / paper(模拟盘) / live(实盘安全层·dry-run双闸门) / ccxt(加密实盘) / easytrader(A股实盘)
+│   ├── utils/               # 配置 / 配色 / 工具 / calendar(交易日历) / experiment_log(实验追踪)
 │   ├── risk/                # 风控最小集（risk_control.py，与策略分离）
 │   ├── research/            # 个股研报
 │   ├── monitor/             # 关注列表 / 告警
@@ -198,6 +211,17 @@ quant_platform/
 ├── scripts/                 # validate_kline.py(真实行情验证) 等
 └── data/                    # 缓存/落库/真实样本 (运行生成, 已 gitignore)
 ```
+
+## 实盘安全（重要）
+
+本 OS 把"回测 → 模拟盘 → 实盘"设计为**默认不碰真钱**：
+
+- `live` 命令默认 **DRY-RUN**：用模拟盘记账 + 记录"本应下的单"，**绝不触碰任何交易所**。
+- 真正发单需要**双闸门同时打开**：① `config/settings.yaml` 中 `live_trading.enabled: true`；② 命令行显式 `--i-understand-real-money-risk`。**二者缺一，仍是 dry-run**。
+- 即便 armed，也只在实例化时惰性导入 `ccxt` / `easytrader`，且需要你预先配置好 API Key / 券商客户端。
+- 任何"偷偷发单"的代码路径都被上述双闸门堵死；实盘前务必先用 `live` 的 dry-run 推演核对成交逻辑。
+
+> 数字化货币/港美/A股实盘适配器（`ccxt` / `easytrader`）为**可选依赖**，缺失不影响回测与模拟盘。请在本机、小资金、已跑满模拟盘并 walk-forward 通过后再考虑灰度实盘。
 
 ## 免责声明
 

@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils.common import load_settings
 from src.engine.optimizer import ParameterOptimizer, DEFAULT_SPACES, PASS_SCORE
+from src.utils.experiment_log import record_run
 
 ROOT = Path(__file__).parent.parent
 
@@ -64,6 +65,7 @@ def main() -> None:
             if not res:
                 continue
             r = res[0]
+            record_run(symbol, market, strat, r, mode="universe")
             oos = r.out_sample
             rows.append({
                 "symbol": symbol,

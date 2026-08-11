@@ -30,9 +30,11 @@ from src.engine.backtest import Backtester, _STRATS
 from src.engine.instruments import InstrumentRegistry
 from src.engine.experiment import ExperimentRunner
 from src.engine.optimizer import ParameterOptimizer, DEFAULT_SPACES, PASS_SCORE
-from src.broker import PaperBroker, Order
+from src.engine.portfolio import Portfolio
+from src.broker import PaperBroker, Order, LiveBroker
 from src.risk.risk_control import RiskConfig, RiskController
 from src.utils import calendar as mcal
+from src.utils.experiment_log import record_run
 
 ROOT = Path(__file__).parent
 PROFILE_PATH = ROOT / "config" / "user_profile.yaml"
@@ -330,7 +332,42 @@ def cmd_selftest(args) -> None:
     res = opt.optimize(df, "sma_cross", space={"fast": [3, 5], "slow": [10, 20]}, top_k=2)
     assert len(res) >= 1 and hasattr(res[0], "score")
 
-    print("✅ selftest 通过：风控 + 回测 + 多标的规格 + 模拟盘 + 日历 + 寻优器 均正常")
+    # —— 组合层（ensemble）自检 ——
+    from src.engine.portfolio import Portfolio
+    pf = Portfolio(capital=100000)
+    rng_p = np.random.default_rng(11)
+    for nm in ("L1", "L2", "L3"):
+        c = 100 * (1 + pd.Series(rng_p.normal(0.0004, 0.018, 400))).cumprod()
+        d = pd.DataFrame({"close": c})
+        pf.add_leg(nm, d, "sma_cross", {"fast": 5, "slow": 20})
+    rc = pf.compose(method="equal")
+    assert rc["n_legs"] == 3
+    assert abs(sum(rc["weights"].values()) - 1.0) < 1e-9, "等权权重和应为 1"
+    assert -1.0 < rc["avg_pairwise_corr"] < 1.0, "相关性诊断应有效"
+    rv = pf.compose(method="vol")
+    assert abs(sum(rv["weights"].values()) - 1.0) < 1e-9, "波动率加权权重和应为 1"
+    assert pf.to_frame(method="equal").shape[0] == 400, "权益表行数应=K线数"
+    print("    · 组合层(equal/vol/相关性) 自检通过")
+
+    # —— 实盘适配器安全层（dry-run）自检 ——
+    from src.broker import LiveBroker
+    # 默认 dry-run：绝不触碰交易所，用 paper 记账
+    lb = LiveBroker(registry=reg, initial_cash=100000, live_enabled=False, dry_run=True)
+    assert not lb.is_armed(), "默认不应 armed"
+    assert "DRY-RUN" in lb.status()
+    lb.mark("AAPL", 100.0)
+    f = lb.submit_order(Order("AAPL", "us", "spot", "buy", 10))
+    assert f is not None and f.qty == 10
+    acct_lb = lb.get_account()
+    assert acct_lb["cash"] < 100000, "dry-run 记账应扣减现金（仅模拟，未真下单）"
+    assert len(lb.dry_orders) == 1, "应记录 1 笔本应下的单"
+    # 即便 live_enabled=True 但 dry_run=True，仍不应 armed（双闸门）
+    lb2 = LiveBroker(registry=reg, initial_cash=100000, live_enabled=True, dry_run=True)
+    assert not lb2.is_armed(), "dry_run=True 时即便配置允许也不应 armed"
+    print("    · 实盘安全层(dry-run 双闸门) 自检通过")
+
+    print("✅ selftest 通过：风控 + 回测 + 多标的规格 + 模拟盘 + 日历 + 寻优器 "
+          "+ 组合层 + 实盘安全层 均正常")
     print_report(r, risk, "SELFTEST", "demo")
 
 
@@ -473,6 +510,12 @@ def cmd_optimize(args) -> None:
     results = opt.optimize(df, strategy, top_k=args.top)
     ParameterOptimizer.print_results(results, strategy, f"{args.symbol}({market})")
 
+    # 实验追踪：记录本次运行的最优结果（落盘 data/experiments/runs.jsonl）
+    if results:
+        rec = record_run(args.symbol, market, strategy, results[0],
+                         mode="single", n_scanned=len(results))
+        print(f"  🗂️ 实验已记录: {rec['ts']} 评分={rec['best_score']} 闸门={rec['gate_ok']}")
+
     # 过拟合整体提示
     overfit = [r for r in results if r.overfit_flag]
     if overfit:
@@ -501,6 +544,106 @@ def cmd_optimize(args) -> None:
         else:
             print(f"\n⚠️ 最优组合评分 {best.score} < {PASS_SCORE} 或已过拟合，"
                   f"按纪律不落盘——请换标的/策略或接受模拟盘观察。")
+
+
+def cmd_combine(args) -> None:
+    """组合层：把多个 标的×策略(preset) 腿合成一个组合，输出聚合绩效 + 相关性诊断。"""
+    settings = load_settings()
+    registry = InstrumentRegistry(load_instrument_overrides())
+    pf = Portfolio(capital=settings["backtest"]["initial_capital"])
+
+    for job in args.jobs.split(","):
+        sym, mkt, pre = (job.split(":") + ["", "", ""])[:3]
+        sym, mkt, pre = sym.strip(), mkt.strip(), pre.strip()
+        if not all([sym, mkt, pre]):
+            continue
+        mkt = norm_market(mkt)
+        preset = load_preset(pre)
+        df = _fetch_df(sym, mkt, settings, args.limit)
+        if df is None or df.empty:
+            print(f"⚠️ {sym}({mkt}) 拉不到数据，跳过")
+            continue
+        name = f"{sym}/{mkt}/{preset['strategy']}"
+        pf.add_leg(name, df, preset["strategy"], preset.get("params", {}))
+        print(f"  + 腿: {name}  ({len(df)}根K线)")
+
+    if len(pf.legs) < 2:
+        raise SystemExit("组合至少需要 2 条腿（--jobs 给多个 代码:市场:预设）")
+
+    res = pf.compose(method=args.weight)
+    m = res["metrics"]
+    print("\n" + "=" * 52)
+    print(f"  🧩 组合层结果 · 权重={args.weight} · {res['n_legs']} 条腿")
+    print("=" * 52)
+    print(f"  组合总收益     : {fmt_pct(m['total_return'])}")
+    print(f"  组合年化       : {fmt_pct(m['annual_return'])}")
+    print(f"  组合最大回撤   : {fmt_pct(m['max_drawdown'])}")
+    print(f"  组合夏普       : {m['sharpe']:.2f}")
+    print("-" * 52)
+    print("  📊 各腿权重:")
+    for k, v in res["weights"].items():
+        print(f"    {k:32s} {fmt_pct(v)}")
+    print("-" * 52)
+    print("  🔍 分散诊断（平均两两相关，越接近 1 越像伪分散）:")
+    print(f"    avg_pairwise_corr = {res['avg_pairwise_corr']:.3f}")
+    print("  —— 各腿独立指标 ——")
+    for k, lm in res["legs"].items():
+        print(f"    {k:32s} 收益={fmt_pct(lm['total_return'])} 回撤={fmt_pct(lm['max_drawdown'])} 夏普={lm['sharpe']:.2f}")
+    print("=" * 52)
+
+    out = ROOT / "data" / "experiments" / f"portfolio_{pd.Timestamp.now():%Y%m%d_%H%M%S}.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    pf.to_frame(method=args.weight).to_csv(out, encoding="utf-8-sig")
+    print(f"  📁 权益曲线已保存: {out}\n")
+
+
+def cmd_live(args) -> None:
+    """实盘执行层：默认 DRY-RUN（绝不发真单）；双闸门才真正下单。
+
+    双闸门：① settings.yaml 中 live_trading.enabled=True；② 显式 --i-understand-real-money-risk。
+    任一不满足 → 走 dry-run 沙盘推演，只记录「本应下的单」，不触碰交易所。
+    """
+    settings = load_settings()
+    preset = load_preset(args.preset)
+    market = norm_market(args.market)
+    df = _fetch_df(args.symbol, market, settings, args.limit)
+    if df is None or df.empty:
+        raise SystemExit("拉不到数据（检查代码/网络/本地 data/real）")
+
+    risk = build_risk_controller(settings, preset.get("risk_override"))
+    registry = InstrumentRegistry(load_instrument_overrides())
+    itype = args.itype
+    spec = registry.get(args.symbol, market, itype)
+
+    live_enabled = settings.get("live_trading", {}).get("enabled", False)
+    dry_run = not args.i_understand_real_money_risk  # 默认 dry-run
+    broker = LiveBroker(
+        registry=registry, initial_cash=settings["backtest"]["initial_capital"],
+        live_enabled=live_enabled, dry_run=dry_run, backend=args.backend,
+    )
+
+    sig = _STRATS[preset["strategy"]](df, **preset.get("params", {})).shift(1).fillna(0)
+    rep = broker.dry_run_replay(
+        args.symbol, market, itype, sig, df, risk=risk, registry=registry)
+
+    print("\n" + "=" * 52)
+    print(f"  🛰️ {args.symbol}（{market}/{itype}）实盘执行层 · 安全模式")
+    print("=" * 52)
+    print(f"  执行状态       : {broker.status()}")
+    print(f"  策略           : {preset['strategy']}")
+    print(f"  入场次数       : {rep['n_entry']} ｜ 离场次数: {rep['n_exit']}")
+    acct = rep["account"]
+    print(f"  期末权益       : {acct['equity']:,.2f}")
+    print(f"  已实现盈亏     : {acct['realized_pnl']:,.2f}")
+    print(f"  现金           : {acct['cash']:,.2f}")
+    print("=" * 52)
+    if not broker.is_armed():
+        print("  🟢 DRY-RUN：以上成交均为模拟，未向任何交易所发送真实订单。")
+        if not live_enabled:
+            print("     安全提示: settings.yaml 仍未打开 live_trading.enabled，"
+                  "故即便去掉风险确认也只会 dry-run。")
+    else:
+        print("  🔴 真实订单已发送，请立即于券商后台核对持仓与成交！")
 
 
 def main():
@@ -548,6 +691,26 @@ def main():
     o.add_argument("--limit", type=int, default=400)
     o.add_argument("--save-best", action="store_true", help="把通过门槛的最优参数落为预设")
     o.set_defaults(func=cmd_optimize)
+
+    # 组合层（多标的/多策略合成 + 相关性诊断）
+    cb = sub.add_parser("combine", help="组合层(多腿合成+相关性诊断)")
+    cb.add_argument("--jobs", required=True,
+                    help="逗号分隔: 代码:市场:预设, 如 09999:hk:09999_hk_rsi_reversal_opt,AAPL:us:balanced")
+    cb.add_argument("--weight", default="equal", choices=["equal", "vol"])
+    cb.add_argument("--limit", type=int, default=400)
+    cb.set_defaults(func=cmd_combine)
+
+    # 实盘执行层（默认 DRY-RUN，双闸门才发真单）
+    lv = sub.add_parser("live", help="实盘执行(默认DRY-RUN,需双闸门才发真单)")
+    lv.add_argument("--preset", default="balanced")
+    lv.add_argument("--symbol", required=True)
+    lv.add_argument("--market", required=True)
+    lv.add_argument("--itype", default="spot", choices=["spot", "future", "etf"])
+    lv.add_argument("--limit", type=int, default=400)
+    lv.add_argument("--backend", default="ccxt", choices=["ccxt", "easytrader"])
+    lv.add_argument("--i-understand-real-money-risk", action="store_true",
+                    help="确认已明白真实下单不可逆；仍需 settings.yaml 打开 live_trading")
+    lv.set_defaults(func=cmd_live)
 
     args = ap.parse_args()
     if not args.cmd:

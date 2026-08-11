@@ -7,5 +7,6 @@
 """
 from .base import BrokerAdapter, Order, Fill, Position
 from .paper import PaperBroker
+from .live import LiveBroker
 
-__all__ = ["BrokerAdapter", "Order", "Fill", "Position", "PaperBroker"]
+__all__ = ["BrokerAdapter", "Order", "Fill", "Position", "PaperBroker", "LiveBroker"]
