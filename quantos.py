@@ -226,6 +226,7 @@ def main():
     b.add_argument("--market", default=None)
     b.add_argument("--timeframe", default="1d")
     b.add_argument("--limit", type=int, default=400)
+    b.set_defaults(func=cmd_backtest)
     sub.add_parser("check", help="校验风控配置").set_defaults(func=cmd_check)
     sub.add_parser("selftest", help="模块自检").set_defaults(func=cmd_selftest)
     args = ap.parse_args()

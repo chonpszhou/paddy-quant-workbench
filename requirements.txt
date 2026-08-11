@@ -16,5 +16,6 @@ streamlit-autorefresh>=0.0.3
 pyyaml>=6.0.1
 # A股数据 (akshare, 前复权历史K线；provider 已做 lazy import，缺失也不影响美股/加密)
 akshare>=1.12.0
-# 本地落库 (SQLite)
-# pandas 已含；如用 Postgres 再装 sqlalchemy
+# 本地落库 / 缓存 (SQLite 用 stdlib；parquet 缓存需要 pyarrow)
+pyarrow>=14.0.0
+# 如用 Postgres 落库再装 sqlalchemy
