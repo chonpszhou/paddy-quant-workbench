@@ -14,3 +14,6 @@ sample_backtest_report.html
 
 # OS
 .DS_Store
+
+# 环境变量（星辰投研团）
+.env

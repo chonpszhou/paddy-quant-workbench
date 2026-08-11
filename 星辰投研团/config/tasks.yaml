@@ -1,0 +1,145 @@
+# =====================================================
+# 星辰投研团 · 自动化定时分析任务配置建议
+# cron 表达式为 分 时 日 月 周（时区 Asia/Shanghai）
+# 可直接落地：crontab -e 粘贴下方 cron 块，或由调度器读取本文件
+# =====================================================
+version: "1.0"
+updated: "2026-08-11"
+timezone: "Asia/Shanghai"
+
+global:
+  watchlist: "config/watchlist.json"
+  push_config: "config/push.yaml"
+  dedup_default_minutes: 30      # 同一标的默认去重窗口
+  price_precision: 2
+
+tasks:
+  # ---------------- 盘中异动监控（交易时段每5分钟） ----------------
+  - id: intraday_monitor
+    name: 盘中异动监控
+    enabled: true
+    cron: "*/5 9-11,13-14 * * 1-5"          # 09:00-11:55 / 13:00-14:55 每5分钟
+    markets: [A股, 港股, 美股, 虚拟货币, 期权]
+    analysis:
+      price_change:                            # 涨跌幅预警
+        threshold_pct: 5.0                     # |涨跌幅| >= 5%
+        near_limit_up_pct: 7.0                 # A股 涨幅>=7% 接近涨停
+        near_limit_down_pct: -5.0              # 跌幅超过 -5%
+      volume_anomaly:                          # 成交量异动
+        volume_ratio: 2.5                      # 量比（当日量/近5日平均量）>= 2.5
+        high_volume_ratio: 3.0                 # 量比>=3 视为强异动，优先级更高
+      crypto_24h:                              # 虚拟货币 24h 波动
+        threshold_pct: 5.0
+      option_iv:                               # 期权波动率
+        iv_jump_pct: 10.0                      # 当日 IV 相对昨收上升 >= 10%
+    push:
+      rules:
+        - {condition: "|涨跌幅| >= 5% 或 接近涨停/跌停", priority: urgent, channels: [IM], dedup_minutes: 30}
+        - {condition: "量比 >= 3", priority: urgent, channels: [IM], dedup_minutes: 30}
+        - {condition: "期权 IV 当日上升 >= 10%", priority: normal, channels: [IM], dedup_minutes: 60}
+        - {condition: "加密 24h 波动 >= 5%", priority: normal, channels: [IM], dedup_minutes: 60}
+    note: "盘中只推急预警；常规异动并入收盘速报，避免打扰"
+
+  # ---------------- 每日收盘速报（A股/港股收盘后） ----------------
+  - id: daily_close_digest
+    name: 每日收盘速报
+    enabled: true
+    cron: "30 15 * * 1-5"                      # 周一至周五 15:30
+    markets: [A股, 港股, 美股, 虚拟货币, 期权]
+    analysis:
+      - 自选股当日涨跌幅统计（按分组汇总）
+      - 成交量/量比异动 TOP10（A股、港股）
+      - 主力资金净流入 TOP10（A股，东方财富）
+      - 期权持仓量变化、IV 变化 TOP5（50ETF/300ETF）
+      - 加密市场 24h 行情摘要（BTC/ETH/SOL）
+      - 美股盘前/盘中快讯（如有）
+    push:
+      channel: [email, feishu]
+      title: "星辰投研团 · 收盘速报 YYYY-MM-DD"
+      format: markdown 表格
+    note: "速报固定时间推送，作为每日归档"
+
+  # ---------------- 每周深度复盘（每周日） ----------------
+  - id: weekly_review
+    name: 每周深度复盘
+    enabled: true
+    cron: "0 20 * * 0"                         # 每周日 20:00
+    markets: [A股, 港股, 美股, 虚拟货币, 期权]
+    analysis:
+      - 周涨跌幅 / 周成交量变化（自选股全量）
+      - 基本面：未来一周财报日历、业绩预告/快报、重要公告
+      - 期权：IV rank 与 IV 百分位（近1年）、期限结构、PCR 指标
+      - 资金面：两融余额、ETF 申赎、北向（若数据源可用）
+      - 宏观：当周重要数据发布回顾与下周日历
+      - 加密：周线级别趋势、资金费率、衍生品未平仓量
+    push:
+      channel: [email, feishu]
+      title: "星辰投研团 · 周报 第W周"
+      format: markdown + 附件(可选 xlsx)
+    note: "周日复盘为最高优先级汇总，覆盖未来一周交易计划"
+
+  # ---------------- 财报季基本面监控（每日早间） ----------------
+  - id: earnings_monitor
+    name: 财报与基本面监控
+    enabled: true
+    cron: "0 9 * * 1-5"                        # 周一至周五 09:00
+    markets: [A股, 港股, 美股]
+    analysis:
+      - 当日/未来3日财报日历（A股业绩预告、港股业绩期、美股财报）
+      - 营收同比变化率、归母净利同比变化率
+      - 毛利率/ROE 环比变化（财报发布后触发）
+      - 业绩预告方向：预增(>30%) / 预亏 / 扭亏
+    push:
+      rules:
+        - {condition: "净利同比变化 > 30% 或 < -30%", priority: normal, channels: [IM]}
+        - {condition: "财报发布日当天", priority: digest, channels: [email], time: "17:00"}
+    note: "财报数据来源：东方财富F10/新浪；美股用 Yahoo Finance"
+
+  # ---------------- 期权波动率日监控 ----------------
+  - id: option_vol_daily
+    name: 期权波动率日监控
+    enabled: true
+    cron: "0 16 * * 1-5"                       # 周一至周五 16:00
+    markets: [期权]
+    analysis:
+      - IV rank / IV 百分位（近1年窗口）
+      - 隐含波动率(IV) vs 历史波动率(HV) 比值
+      - 期限结构斜率（近月 vs 远月）
+      - 平值IV与波动率指数（沪深300ETF波指 / VIX）
+    push:
+      rules:
+        - {condition: "IV 百分位 > 90%", priority: urgent, channels: [IM, email]}
+        - {condition: "IV/HV > 1.5", priority: normal, channels: [IM]}
+        - {condition: "期限结构倒挂（近月IV > 远月IV）", priority: urgent, channels: [IM]}
+    note: "波动率异常多与重大事件/恐慌相关，提前布局对冲"
+
+  # ---------------- 加密市场双时段监控 ----------------
+  - id: crypto_daily
+    name: 加密市场日监控
+    enabled: true
+    cron: "0 8,20 * * *"                       # 每日 08:00 / 20:00
+    markets: [虚拟货币]
+    analysis:
+      - 自选币 24h 涨跌幅、成交额变化
+      - 资金费率（永续合约，>0.05% 提示过热）
+      - 未平仓量变化（Deribit 期权 OI）
+      - BTC 主导率与总市值变化
+    push:
+      rules:
+        - {condition: "24h 涨跌幅 > 10% 或 < -10%", priority: urgent, channels: [IM]}
+        - {condition: "资金费率 > 0.05%", priority: normal, channels: [IM]}
+    note: "加密7x24交易，固定双时段巡检即可覆盖大多数场景"
+
+# ---------------- 落地方式（任选其一） ----------------
+deploy_options:
+  - name: system_cron
+    desc: "macOS/Linux crontab，直接把各任务 cron 表达式粘贴到 crontab -e"
+    example: |
+      */5 9-11,13-14 * * 1-5 cd /path/to/星辰投研团 && python3 scripts/run_task.py intraday_monitor
+      30 15 * * 1-5        cd /path/to/星辰投研团 && python3 scripts/run_task.py daily_close_digest
+      0 20 * * 0           cd /path/to/星辰投研团 && python3 scripts/run_task.py weekly_review
+  - name: apscheduler
+    desc: "Python APScheduler 读取本文件统一调度，适合部署到服务器/容器"
+    pip: "pip install apscheduler"
+  - name: codex_automation
+    desc: "若希望在 Codex 中托管提醒，可基于本文件在 Codex 应用内创建定时任务"
