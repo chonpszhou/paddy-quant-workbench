@@ -95,13 +95,28 @@ def dual_thrust_signals(df: pd.DataFrame, k1: float = 0.5, k2: float = 0.5) -> p
 
 
 def rsi_reversal_signals(df: pd.DataFrame, period: int = 14,
-                         oversold: float = 30.0, overbought: float = 70.0) -> pd.Series:
-    """RSI 逆向均值回归：超卖做多、超买卖空。"""
+                         oversold: float = 30.0, overbought: float = 70.0,
+                         cooldown: int = 0) -> pd.Series:
+    """RSI 逆向均值回归：超卖做多、超买卖空。
+
+    参数:
+        cooldown: 信号冷却期（K线数）。当信号从非零变为零后，接下来
+                  cooldown 根K线强制空仓（sig=0），抑制反复开平。
+                  默认 0 表示不启用冷却。
+    """
     close = df["close"]
     r = _rsi(close, period)
     sig = pd.Series(0, index=close.index)
     sig[r < oversold] = 1
     sig[r > overbought] = -1
+    if cooldown > 0:
+        cd = 0
+        for i in range(len(sig)):
+            if cd > 0:
+                sig.iloc[i] = 0
+                cd -= 1
+            elif i > 0 and sig.iloc[i] == 0 and sig.iloc[i - 1] != 0:
+                cd = cooldown
     return sig
 
 

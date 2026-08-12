@@ -57,6 +57,7 @@ DEFAULT_SPACES = {
         "period": [7, 14, 21],
         "oversold": [25, 30],
         "overbought": [70, 75],
+        "cooldown": [0, 5, 10, 20],
     },
     "atr_channel": {
         "window": [14, 20],

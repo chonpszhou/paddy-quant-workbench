@@ -4,8 +4,9 @@ instruments:
 markets:
 - hk
 name: 寻优·09999(hk)·rsi_reversal
-note: 参数寻优自动生成（评分 93.7，样本外夏普 2.41，walk_forward+holdout）。须先经 PaperBroker 模拟盘灰度验证，且仅小资金实盘。
+note: 参数寻优自动生成（评分 93.7，样本外夏普 2.41，walk_forward+holdout + cooldown=5 抑制反复开平）。须先经 PaperBroker 模拟盘灰度验证，且仅小资金实盘。
 params:
+  cooldown: 5
   overbought: 70
   oversold: 25
   period: 7

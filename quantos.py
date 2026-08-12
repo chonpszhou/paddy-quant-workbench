@@ -507,7 +507,24 @@ def cmd_optimize(args) -> None:
         raise SystemExit(f"支持寻优的策略: {list(DEFAULT_SPACES)}")
 
     opt = ParameterOptimizer(settings)
-    results = opt.optimize(df, strategy, top_k=args.top)
+
+    # 加载基本面数据（第四道闸门：质量否决）
+    fund = None
+    if args.fundamentals:
+        fpath = Path(args.fundamentals)
+        if fpath.exists():
+            raw = json.loads(fpath.read_text(encoding="utf-8"))
+            # 按标的代码匹配：港股 "hk09999" 同时匹配 "09999" 和后缀
+            for key, val in raw.items():
+                if key.endswith(args.symbol) or args.symbol in str(key):
+                    fund = val
+                    break
+            if fund is None:
+                print(f"⚠️ 基本面文件中未找到标的 {args.symbol} 的数据，跳过质量闸门")
+        else:
+            print(f"⚠️ 基本面文件不存在: {args.fundamentals}，跳过质量闸门")
+
+    results = opt.optimize(df, strategy, top_k=args.top, fundamentals=fund)
     ParameterOptimizer.print_results(results, strategy, f"{args.symbol}({market})")
 
     # 实验追踪：记录本次运行的最优结果（落盘 data/experiments/runs.jsonl）
@@ -690,6 +707,8 @@ def main():
     o.add_argument("--top", type=int, default=5, help="返回 Top-K 参数组合")
     o.add_argument("--limit", type=int, default=400)
     o.add_argument("--save-best", action="store_true", help="把通过门槛的最优参数落为预设")
+    o.add_argument("--fundamentals", default=None,
+                   help="基本面 JSON 文件路径，用于第四道闸门（质量否决）")
     o.set_defaults(func=cmd_optimize)
 
     # 组合层（多标的/多策略合成 + 相关性诊断）
