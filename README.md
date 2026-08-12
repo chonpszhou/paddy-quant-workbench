@@ -100,6 +100,8 @@ python quantos.py live --preset 09999_hk_rsi_reversal_opt --symbol 09999 --marke
 
 > 诚实提醒：参数寻优在 33 标的 × 7 策略（231 组）上跑双闸门（多周期 walk-forward 样本外 + 严格 holdout + 过拟合检测），当前仅 **3 组**通过（09999 港股 rsi_reversal 评分 93.7 / OOS夏普 2.41、09961 港股 rsi_reversal 评分 79.3 / OOS夏普 2.1、V 美股 rsi_reversal 评分 74.6 / OOS夏普 1.75，均未过拟合）。这正说明稳健 Alpha 稀缺——系统的价值在于**自动拒绝其余 228 组**（含 8 组过拟合拦截、212 组双闸门未过），而非制造"看起来很美"的曲线。完整结果看板见 `data/experiments/universe_opt_dashboard.html`。
 
+> **灰度验证的诚实补充（必读）**：三个双闸门胜者又经 `quantos.py paper` 前向模拟盘（真实数据 + 强制 2% 单笔下注 + 真实手续费）验证，结果全部落在**接近盈亏平衡到小幅亏损**：09999 网易净额 −265 / 09961 携程 −1,315 / V Visa −93（均相对 10 万初始资金）。原因很直白——样本外夏普是在**满仓单标的**口径下算的，而灰度模拟被 2% 仓位上限 + 约 60 次换手的高费率拖累，信号 Edge 被手续费吃光。**结论：双闸门筛出的是"统计上有 Edge 的参数"，不等于"实盘能赚钱"**；真正上量要看仓位/费率/滑点。系统如实呈现，未粉饰。详见 `data/experiments/paper_grayscale_report.html`。
+
 完整操作手册见 **[OS_GUIDE.md](OS_GUIDE.md)**；配套知识库在 Obsidian「量化交易」库（总览见 `00_量化交易支撑体系规划.md`）。
 
 ## 子项目：星辰投研团
