@@ -98,7 +98,7 @@ python quantos.py live --preset 09999_hk_rsi_reversal_opt --symbol 09999 --marke
 | `rsi_reversal` | 均值回归 | RSI 超卖做多/超买卖空 | 否（close） |
 | `atr_channel` | 趋势跟踪 | 中轨 ± mult×ATR 波动自适应通道 | 是 |
 
-> 诚实提醒：参数寻优在 23 标的 × 7 策略（161 组）上跑双闸门（多周期 walk-forward 样本外 + 严格 holdout + 过拟合检测），当前仅 **1 组**通过（09999 港股 rsi_reversal，评分 93.7，样本外夏普 2.41，未过拟合）。这正说明稳健 Alpha 稀缺——系统的价值在于**自动拒绝其余 160 组**，而非制造"看起来很美"的曲线。
+> 诚实提醒：参数寻优在 33 标的 × 7 策略（231 组）上跑双闸门（多周期 walk-forward 样本外 + 严格 holdout + 过拟合检测），当前仅 **3 组**通过（09999 港股 rsi_reversal 评分 93.7 / OOS夏普 2.41、09961 港股 rsi_reversal 评分 79.3 / OOS夏普 2.1、V 美股 rsi_reversal 评分 74.6 / OOS夏普 1.75，均未过拟合）。这正说明稳健 Alpha 稀缺——系统的价值在于**自动拒绝其余 228 组**（含 8 组过拟合拦截、212 组双闸门未过），而非制造"看起来很美"的曲线。完整结果看板见 `data/experiments/universe_opt_dashboard.html`。
 
 完整操作手册见 **[OS_GUIDE.md](OS_GUIDE.md)**；配套知识库在 Obsidian「量化交易」库（总览见 `00_量化交易支撑体系规划.md`）。
 
