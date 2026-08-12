@@ -14,11 +14,12 @@
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from .backtest import Backtester
+from .quality_filter import Fundamentals, QualityFilter, QualityReport
 
 # —— 阈值常量 ——
 MIN_BARS_FOR_WF = 200        # 低于此只用单期保留集
@@ -74,6 +75,7 @@ class OptResult:
     gate_ok: bool                    # 是否通过双门槛
     verdict: str
     note: str = ""
+    quality: dict | None = None      # 第四道闸门（基本面质量否决）报告，未提供则 None
 
 
 def _score(in_s: dict, out_s: dict | None, dd_circuit: float) -> tuple[float, bool, bool, str]:
@@ -181,10 +183,22 @@ class ParameterOptimizer:
         return out
 
     def optimize(self, df, strategy: str = "sma_cross",
-                 space: dict | None = None, top_k: int = 5) -> list[OptResult]:
+                 space: dict | None = None, top_k: int = 5,
+                 fundamentals: dict | Fundamentals | None = None) -> list[OptResult]:
+        """参数寻优 + 第四道闸门（基本面质量否决）。
+
+        fundamentals: 该标的的基本面快照（Fundamentals 或 dict）。若提供，
+        则在「双闸门通过」的候选上叠加质量否决——任一红线命中即把 verdict
+        改为「❌ 被基本面否决」并关闭 gate_ok，评分封顶 60。
+        """
         space = space or DEFAULT_SPACES.get(strategy)
         if space is None:
             raise ValueError(f"策略 {strategy} 无默认参数空间，请显式传入 space")
+
+        # 第四道闸门：标的基本面一次性评估（与参数无关）
+        qrep: QualityReport | None = None
+        if fundamentals is not None:
+            qrep = QualityFilter().evaluate(fundamentals)
 
         keys = list(space.keys())
         combos = [dict(zip(keys, vals)) for vals in itertools.product(*(space[k] for k in keys))]
@@ -220,10 +234,20 @@ class ParameterOptimizer:
                 if not (not np.isnan(hs) and hs >= HOLDOUT_MIN_SHARPE):
                     reasons.append(f"保留集夏普 {hs:.2f}<{HOLDOUT_MIN_SHARPE}")
                 note = (note + "；" if note else "") + "未过双门槛:" + ",".join(reasons)
+
+            # —— 第四道闸门：双闸门已过 → 叠加基本面质量否决 ——
+            quality_dict = qrep.to_dict() if qrep is not None else None
+            if qrep is not None and gate_ok and qrep.veto:
+                gate_ok = False
+                verdict = "❌ 被基本面否决"
+                score = min(score, 60.0)
+                reasons_txt = "；".join(qrep.reasons)
+                note = (note + "；" if note else "") + f"基本面否决:{reasons_txt}"
+
             results.append(OptResult(
                 params=params, in_sample=in_s, out_sample=out_s,
                 score=score, overfit_flag=overfit, gate_ok=gate_ok,
-                verdict=verdict, note=note,
+                verdict=verdict, note=note, quality=quality_dict,
             ))
 
         results.sort(key=lambda r: r.score, reverse=True)
@@ -246,5 +270,10 @@ class ParameterOptimizer:
             print(f"    IS夏普={r.in_sample['sharpe']:.2f}  IS回撤={r.in_sample['max_drawdown']*100:.1f}%  "
                   f"IS收益={r.in_sample['total_return']*100:.1f}%")
             print(f"    WF均值夏普={wf:.2f}(有效窗口 {nv})  保留集夏普={hs:.2f}/交易 {ht}次")
+            if r.quality is not None:
+                qv = r.quality
+                tag = "❌否决" if qv.get("veto") else "✓通过"
+                print(f"    🛡️ 第四道闸门(质量): {tag}  质量分={qv.get('score', 0):.0f}"
+                      f"  红线={'; '.join(qv.get('reasons', [])) or '无'}")
             if r.note:
                 print(f"    ⚠️ {r.note}")

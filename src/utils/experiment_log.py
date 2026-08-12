@@ -37,6 +37,10 @@ def record_run(symbol, market, strategy, top_result,
         "gate_ok": top_result.gate_ok,
         "overfit_flag": top_result.overfit_flag,
         "verdict": top_result.verdict,
+        "quality_veto": bool(getattr(top_result, "quality", None)
+                             and top_result.quality.get("veto")) if hasattr(top_result, "quality") else None,
+        "quality_score": _round((getattr(top_result, "quality", None) or {}).get("score"))
+                        if hasattr(top_result, "quality") else None,
         "is_sharpe": _round(top_result.in_sample.get("sharpe")),
         "wf_sharpe": _round(oos.get("wf_sharpe")),
         "holdout_sharpe": _round(oos.get("holdout_sharpe")),

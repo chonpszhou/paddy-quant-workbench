@@ -1,0 +1,73 @@
+{
+  "_meta": {
+    "description": "候选标的基本面快照（第四道闸门质量否决用）。字段来自 TradingAgentTeam 深度研究(2026-08-12)，经 westock+wind 真实接口。缺失字段为 null，质量过滤器将其视为 N/A（不惩罚缺数据）。",
+    "thresholds": {
+      "net_profit_yoy_min": -20.0,
+      "roe_annualized_min": 5.0,
+      "debt_ratio_max": 70.0,
+      "current_ratio_min": 1.0,
+      "pe_max": 100.0
+    }
+  },
+  "hk09999": {
+    "symbol": "hk09999",
+    "name": "网易",
+    "market": "hk",
+    "source": "westock+wind (TradingAgentTeam 2026-08-12)",
+    "as_of": "2026Q1",
+    "net_profit_yoy": 7.5,
+    "revenue_yoy": 10.9,
+    "roe": 6.6,
+    "roe_basis": "quarter",
+    "net_margin": 35.0,
+    "gross_margin": 69.0,
+    "debt_ratio": 27.0,
+    "current_ratio": null,
+    "pe": null,
+    "pb": null,
+    "red_flags": [],
+    "notes": "高质量现金牛：净利率35%/毛利率69%/负债率27%，无监管红旗。RSI-7=28 深度超卖与质量共振 → BUY 小仓。"
+  },
+  "hk09961": {
+    "symbol": "hk09961",
+    "name": "携程",
+    "market": "hk",
+    "source": "westock+wind (TradingAgentTeam 2026-08-12)",
+    "as_of": "2026Q1",
+    "net_profit_yoy": -38.8,
+    "revenue_yoy": 22.5,
+    "roe": 1.5,
+    "roe_basis": "quarter",
+    "net_margin": 15.2,
+    "gross_margin": null,
+    "debt_ratio": null,
+    "current_ratio": null,
+    "pe": null,
+    "pb": null,
+    "red_flags": [
+      "51.79亿反垄断天价罚单",
+      "字节系(豆包)杀入酒店预订，竞争加剧",
+      "高退票费争议"
+    ],
+    "notes": "价值陷阱：营收+22.5%但净利同比-38.8%、ROE年化仅6%、最大回撤-49.9%、卖空12.75%。双闸门虽过，质量否决 → AVOID。"
+  },
+  "usV": {
+    "symbol": "usV",
+    "name": "Visa",
+    "market": "us",
+    "source": "westock+wind (TradingAgentTeam 2026-08-12)",
+    "as_of": "2026Q2",
+    "net_profit_yoy": null,
+    "revenue_yoy": null,
+    "roe": 60.0,
+    "roe_basis": "ttm",
+    "net_margin": 53.0,
+    "gross_margin": 78.0,
+    "debt_ratio": null,
+    "current_ratio": null,
+    "pe": null,
+    "pb": null,
+    "red_flags": [],
+    "notes": "极强盈利质量：净利率53%/毛利率78%/ROE 60%(TTM)，无监管红旗。估值偏贵(近52周高位87%)，等回调不追高 → BUY/回调。"
+  }
+}
